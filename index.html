@@ -1,0 +1,3582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>가스안전 점검 미션 3D | 한국가스안전공사 AI 게임 공모전</title>
+<style>
+  :root{
+    --navy: #16273f;
+    --navy-deep: #0d1b2e;
+    --steel: #4a6070;
+    --yellow: #ffd166;
+    --amber: #ff9f4a;
+    --red: #ff5d5d;
+    --green: #35d18a;
+    --ink: #f7f9fc;
+    --panel: rgba(18,32,54,0.72);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background:var(--navy-deep);
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    color:var(--ink);
+  }
+  #canvas-wrap{
+    position:fixed; inset:0;
+    filter: saturate(1.12) contrast(1.05) brightness(1.03);
+  }
+  canvas{display:block; width:100%; height:100%;}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed; inset:0; pointer-events:none; z-index:10; font-variant-numeric:tabular-nums;}
+  .corner-tag{
+    position:absolute; top:18px; left:18px;
+    font-size:12px; letter-spacing:3px; color:var(--yellow);
+    background:var(--panel); backdrop-filter:blur(10px); border:1px solid rgba(255,209,102,0.45);
+    padding:6px 12px; border-radius:6px;
+  }
+  #mission-panel{
+    position:absolute; top:60px; left:18px; width:300px;
+    background:linear-gradient(155deg, rgba(28,46,72,0.78), rgba(14,24,40,0.7));
+    backdrop-filter:blur(14px); border-left:3px solid var(--yellow);
+    border-radius:0 10px 10px 0;
+    padding:14px 16px;
+    box-shadow:0 14px 34px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) inset, 0 1px 0 rgba(255,255,255,0.08) inset;
+  }
+  #mission-panel h2{font-size:13px; letter-spacing:2px; color:var(--yellow); margin-bottom:10px; font-weight:700;}
+  .m-item{
+    display:flex; align-items:flex-start; gap:8px; font-size:12.5px; line-height:1.5;
+    padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:#c3cad6;
+    transition:color .3s;
+  }
+  .m-item:last-child{border-bottom:none;}
+  .m-item .num{
+    min-width:18px; height:18px; border-radius:50%; border:1px solid #52607a;
+    display:flex; align-items:center; justify-content:center; font-size:10px; color:#8ea0bd;
+    flex-shrink:0; margin-top:1px;
+  }
+  .m-item.active{color:var(--ink); font-weight:700;}
+  .m-item.active .num{border-color:var(--yellow); color:var(--yellow); box-shadow:0 0 8px rgba(242,201,76,0.5);}
+  .m-item.done{color:#5c7a63;}
+  .m-item.done .num{background:var(--green); border-color:var(--green); color:#0a1628;}
+
+  #top-right{position:absolute; top:18px; right:18px; display:flex; gap:10px;}
+  .stat-box{
+    background:linear-gradient(155deg, rgba(28,46,72,0.78), rgba(14,24,40,0.7));
+    backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.12); border-radius:8px;
+    padding:8px 16px; text-align:center; min-width:86px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.08) inset;
+  }
+  #mute-btn{
+    background:var(--panel); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.12); border-radius:8px;
+    width:44px; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer;
+    pointer-events:auto; color:var(--yellow); box-shadow:0 6px 18px rgba(0,0,0,0.3);
+  }
+  .stat-box .label{font-size:10px; letter-spacing:2px; color:#8ea0bd;}
+  .stat-box .value{font-size:20px; font-weight:700; margin-top:2px;}
+  #gas-box .value{color:var(--green); transition:color .4s;}
+  #gas-box.warn .value{color:var(--yellow);}
+  #gas-box.danger .value{color:var(--red); animation:pulseText .6s infinite;}
+  @keyframes pulseText{0%,100%{opacity:1;}50%{opacity:0.4;}}
+
+  #crosshair{
+    position:absolute; top:50%; left:50%; width:6px; height:6px;
+    margin:-3px 0 0 -3px; border-radius:50%; background:rgba(255,255,255,0.8);
+    box-shadow:0 0 6px rgba(255,255,255,0.6);
+  }
+  #interact-prompt{
+    position:absolute; bottom:120px; left:50%; transform:translateX(-50%);
+    background:var(--panel); border:1px solid var(--yellow); padding:10px 22px;
+    border-radius:3px; font-size:14px; opacity:0; transition:opacity .2s; text-align:center;
+  }
+  #interact-prompt.show{opacity:1;}
+  #interact-prompt .key{
+    display:inline-block; border:1px solid var(--yellow); color:var(--yellow);
+    border-radius:4px; padding:1px 7px; margin-right:8px; font-weight:700;
+  }
+
+  /* Translucent gesture hint, floating near the crosshair: a radial progress
+     ring (fills as the real gesture progress increases) with a center glyph
+     showing which motion to make (↻ turn, ↑ drag up, ● hold). Replaces the
+     earlier decorative spin/bounce animation, which looked busy but didn't
+     actually tell you how close you were to finishing. */
+  #gesture-hint{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:150px; height:150px; opacity:0; transition:opacity .25s ease;
+    pointer-events:none;
+  }
+  #gesture-hint.show{ opacity:1; animation: ghintBreathe 1.8s ease-in-out infinite; }
+  #gesture-hint svg{ width:100%; height:100%; opacity:0.62; filter:drop-shadow(0 0 6px rgba(0,0,0,0.55)); }
+  #ghint-ring{ opacity:0.95; transition: stroke-dashoffset .08s linear; }
+  #ghint-icon{ opacity:0.95; }
+  @keyframes ghintBreathe{ 0%,100%{ opacity:0.82; } 50%{ opacity:1; } }
+
+
+  #toast{
+    position:absolute; bottom:60px; left:50%; transform:translateX(-50%) translateY(10px);
+    background:var(--panel); border-left:3px solid var(--green); padding:14px 24px;
+    font-size:18px; font-weight:600; opacity:0; transition:all .35s; border-radius:2px; max-width:520px; text-align:center;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  #toast.warn{border-left-color:var(--red);}
+
+  #controls-hint{
+    position:absolute; bottom:18px; right:18px; font-size:11px; color:#8ea0bd;
+    background:var(--panel); padding:8px 12px; border-radius:2px; line-height:1.8;
+  }
+  #controls-hint b{color:var(--yellow);}
+  #safety-strip{
+    position:fixed; right:18px; bottom:64px; z-index:11; pointer-events:none;
+    display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; max-width:520px;
+  }
+  #safety-strip span{
+    padding:7px 10px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.2px;
+    background:rgba(20,31,49,.82); border:1px solid rgba(255,209,102,.36);
+    color:#edf4ff; box-shadow:0 7px 18px rgba(0,0,0,.24); backdrop-filter:blur(10px);
+  }
+  #safety-strip span:first-child{color:#ffd166; border-color:rgba(255,209,102,.72);}
+
+  #objective-banner{
+    position:absolute; top:18px; left:50%; transform:translateX(-50%);
+    width:min(450px, calc(100vw - 700px)); min-width:300px;
+    padding:9px 14px 10px; border-radius:12px;
+    background:linear-gradient(105deg, rgba(15,27,46,.88), rgba(27,46,71,.74));
+    border:1px solid rgba(255,255,255,.13); box-shadow:0 12px 30px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.08) inset;
+    backdrop-filter:blur(16px); text-align:center;
+  }
+  #objective-meta{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px;}
+  #objective-step{font-size:10px; letter-spacing:2px; font-weight:800; color:var(--yellow);}
+  #objective-state{font-size:10px; letter-spacing:1px; color:#9eb0c9;}
+  #objective-title{font-size:13px; line-height:1.35; font-weight:800; color:#f5f8fc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  #objective-track{height:3px; overflow:hidden; border-radius:9px; margin-top:8px; background:rgba(255,255,255,.1);}
+  #objective-progress{width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg, var(--yellow), #ffe8a2); transition:width .45s cubic-bezier(.2,.8,.2,1); box-shadow:0 0 10px rgba(255,209,102,.6);}
+  @media (max-width:1100px){#objective-banner{display:none;}}
+
+  #vignette{
+    position:absolute; inset:0; pointer-events:none;
+    box-shadow: inset 0 0 0 0 rgba(231,76,60,0);
+    transition: box-shadow .5s;
+  }
+  #vignette-base{
+    position:absolute; inset:0; pointer-events:none;
+    box-shadow: inset 0 0 140px 40px rgba(5,8,14,0.45);
+  }
+  /* Faint film grain, like real sensor noise, sitting over the render.
+     Without this, PBR materials still look slightly "too clean" — a plastic
+     CG smoothness that real photos/footage never have. A tiled SVG noise
+     texture at very low opacity breaks up that smoothness cheaply, with no
+     extra render cost. */
+  #grain-overlay{
+    position:fixed; inset:0; pointer-events:none; z-index:9;
+    opacity:0.05; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    background-size:140px 140px;
+  }
+  #mission-flash{
+    position:absolute; inset:0; pointer-events:none; opacity:0;
+    background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.55) 0%, rgba(53,209,138,0.18) 35%, rgba(53,209,138,0) 70%);
+  }
+  #mission-flash.pulse{ animation: missionPulse 0.6s ease-out; }
+  @keyframes missionPulse{
+    0%{ opacity:0; }
+    18%{ opacity:1; }
+    100%{ opacity:0; }
+  }
+
+  #caption-box{
+    position:absolute; left:50%; bottom:16%; transform:translateX(-50%) translateY(10px);
+    background:linear-gradient(180deg, rgba(24,40,64,0.85), rgba(9,15,26,0.92));
+    backdrop-filter:blur(12px);
+    border:1px solid rgba(255,209,102,0.22);
+    border-left:3px solid var(--yellow);
+    padding:15px 28px; border-radius:4px 12px 12px 4px;
+    font-size:16.5px; font-weight:500; font-style:italic; color:#eef2f6;
+    max-width:60vw; text-align:center; line-height:1.6; letter-spacing:0.2px;
+    box-shadow:0 16px 40px rgba(0,0,0,0.5), 0 0 24px rgba(255,209,102,0.05);
+    opacity:0; transition:opacity .45s ease, transform .45s ease;
+  }
+  #caption-box.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  #cutscene-skip{
+    position:absolute; bottom:5%; right:3%; font-size:12px; color:#c3cad6;
+    background:rgba(18,32,54,0.6); padding:6px 14px; border-radius:14px; opacity:0;
+    transition:opacity .4s; pointer-events:none; letter-spacing:1px;
+  }
+  #cutscene-skip.show{opacity:1;}
+
+  #canvas-wrap{
+    transition: filter .5s cubic-bezier(.4,0,.2,1);
+  }
+  #eyelid-overlay{
+    position:fixed; inset:0; z-index:50; pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 50%, #0a0605 0%, #030202 70%, #000 100%);
+    opacity:1;
+    transition: opacity .55s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* ---------- Overlays ---------- */
+  .overlay{
+    position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at center, rgba(10,22,40,0.97) 0%, rgba(4,8,15,0.99) 100%);
+  }
+  .hidden{display:none !important;}
+  .card{
+    width:min(560px, 90vw); max-height:88vh; overflow-y:auto;
+    background:linear-gradient(180deg, rgba(28,46,72,0.92), rgba(13,22,38,0.96));
+    backdrop-filter:blur(18px);
+    border:1px solid rgba(255,209,102,0.3); border-radius:14px; padding:40px 36px;
+    box-shadow:0 24px 70px rgba(0,0,0,0.5), 0 0 40px rgba(255,209,102,0.06);
+  }
+  .card::-webkit-scrollbar{width:7px;}
+  .card::-webkit-scrollbar-thumb{background:rgba(255,209,102,.38); border-radius:10px;}
+  .eyebrow{font-size:12px; letter-spacing:4px; color:var(--yellow); margin-bottom:14px; font-weight:700;}
+  .card h1{font-size:28px; line-height:1.35; margin-bottom:16px; font-weight:800;}
+  .card p{font-size:14px; line-height:1.8; color:#c3cad6; margin-bottom:10px;}
+  .card ul{margin:16px 0 22px 0; padding-left:0; list-style:none;}
+  .card ul li{font-size:13px; color:#c3cad6; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.07); display:flex; gap:10px;}
+  .card ul li .tag{
+    min-width:64px; font-weight:700; color:var(--yellow); font-size:11px; letter-spacing:1px;
+  }
+  .control-icons{
+    display:flex; gap:10px; margin:20px 0 22px; justify-content:center; flex-wrap:wrap;
+  }
+  .safety-flow{display:flex; align-items:center; justify-content:center; gap:7px; margin:18px 0 22px; color:#c7d4e6; font-size:11px; font-weight:800; letter-spacing:.2px; flex-wrap:wrap;}
+  .safety-flow .flow-step{padding:6px 9px; border:1px solid rgba(255,255,255,.12); border-radius:999px; background:rgba(255,255,255,.04);}
+  .safety-flow .flow-step:last-child{color:var(--yellow); border-color:rgba(255,209,102,.5);}
+  .safety-flow .flow-arrow{color:#7285a2; font-size:13px;}
+  .control-icons .ci{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);
+    border-radius:10px; padding:12px 16px; min-width:78px;
+  }
+  .control-icons .ci .glyph{font-size:22px;}
+  .control-icons .ci .label{font-size:11px; color:#c3cad6; text-align:center; line-height:1.4;}
+  .btn{
+    background:var(--yellow); color:var(--navy-deep); border:none; font-weight:800;
+    padding:14px 30px; border-radius:3px; font-size:15px; cursor:pointer; letter-spacing:1px;
+    transition:transform .15s, box-shadow .15s;
+  }
+  .btn:hover{transform:translateY(-2px); box-shadow:0 10px 20px rgba(242,201,76,0.25);}
+  .btn.secondary{background:transparent; color:var(--yellow); border:1px solid var(--yellow);}
+  #loading .spin{
+    width:34px; height:34px; border-radius:50%; border:3px solid rgba(242,201,76,0.2);
+    border-top-color:var(--yellow); animation:spin 0.9s linear infinite; margin-bottom:18px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loading{flex-direction:column; align-items:center;}
+  #loading p{color:#8ea0bd; font-size:13px; letter-spacing:2px;}
+
+  #result-stats{display:flex; gap:12px; margin:22px 0;}
+  .rstat{flex:1; background:rgba(255,255,255,0.04); border-radius:4px; padding:14px 10px; text-align:center;}
+  .rstat .n{font-size:24px; font-weight:800; color:var(--yellow);}
+  .rstat .l{font-size:11px; color:#8ea0bd; margin-top:4px; letter-spacing:1px;}
+  .rank{font-size:15px; color:var(--green); font-weight:700; margin-bottom:6px;}
+
+  .quiz-opt{
+    display:block; width:100%; text-align:left; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.12); color:var(--ink); padding:13px 16px; margin-bottom:10px;
+    border-radius:4px; font-size:14px; cursor:pointer; transition:all .15s;
+  }
+  .quiz-opt:hover{border-color:var(--yellow); background:rgba(242,201,76,0.08);}
+  .quiz-opt.correct{border-color:var(--green); background:rgba(39,174,96,0.18);}
+  .quiz-opt.wrong{border-color:var(--red); background:rgba(231,76,60,0.18);}
+  .quiz-opt[disabled]{cursor:default;}
+  #quiz-feedback{font-size:13px; line-height:1.7; color:#c3cad6; margin:14px 0; min-height:20px;}
+
+  /* Phone close-up report scene — dialing, then a quick quiz on what to tell
+     the dispatcher, styled like the phone screen is right up in frame.
+     Was 420px wide with height left to auto-size off the content (a
+     420px-tall screen + padding), which landed close to a square — nothing
+     like an actual phone's proportions. Fixed to a real handset aspect
+     ratio (~9:19.5) instead. */
+  .phone-shell{
+    width:290px; height:600px; background:#0a0d12; border-radius:42px; padding:14px;
+    box-shadow:0 40px 100px rgba(0,0,0,0.65), 0 0 0 3px rgba(255,255,255,0.07) inset;
+    position:relative; display:flex; flex-direction:column;
+  }
+  .phone-notch{
+    width:86px; height:20px; background:#0a0d12; border-radius:0 0 14px 14px;
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:2;
+  }
+  .phone-screen{
+    background:linear-gradient(160deg, #16273f, #0a1628); border-radius:30px;
+    padding:44px 22px 26px; flex:1; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; overflow-y:auto;
+  }
+  .phone-state.hidden{display:none;}
+  .phone-num{font-size:42px; font-weight:800; color:var(--ink); letter-spacing:3px; margin-bottom:14px;}
+  .phone-status{font-size:16px; color:#8ea0bd; letter-spacing:1px;}
+  .dots::after{content:''; animation: dotBlink 1.2s steps(4) infinite;}
+  @keyframes dotBlink{0%{content:'';}25%{content:'.';}50%{content:'..';}75%{content:'...';}}
+  .phone-eyebrow{font-size:12px; letter-spacing:2px; color:var(--yellow); margin-bottom:14px; font-weight:700;}
+  .phone-q{font-size:18px; font-weight:700; color:var(--ink); line-height:1.5; margin-bottom:18px;}
+  #phone-quiz-opts .quiz-opt{font-size:14px; padding:12px 14px; margin-bottom:9px;}
+  #phone-quiz-fb{font-size:13px; line-height:1.6; color:#c3cad6; margin:10px 0; min-height:18px;}
+  .phone-check{font-size:56px; margin-bottom:14px;}
+
+  #mobile-warn{
+    position:fixed; inset:0; z-index:200; background:var(--navy-deep); display:none;
+    align-items:center; justify-content:center; text-align:center; padding:30px;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="corner-tag">GAS SAFETY INSPECTION SIM</div>
+
+  <div id="objective-banner" aria-live="polite">
+    <div id="objective-meta"><span id="objective-step">MISSION 01</span><span id="objective-state">안전 대응 절차</span></div>
+    <div id="objective-title">가스레인지 불을 끄고 밸브 잠그기</div>
+    <div id="objective-track"><div id="objective-progress"></div></div>
+  </div>
+
+  <div id="mission-panel">
+    <h2>미션 진행 상황</h2>
+    <div class="m-item" data-m="0"><span class="num">1</span><span>가스레인지 불을 끄고 밸브 잠그기</span></div>
+    <div class="m-item" data-m="1"><span class="num">2</span><span>안전하게 접근 가능할 때 메인밸브 잠그기</span></div>
+    <div class="m-item" data-m="2"><span class="num">3</span><span>전기 조작 없이 문·창문 열어 자연 환기</span></div>
+    <div class="m-item" data-m="3"><span class="num">4</span><span>핵심 안전 수칙 확인하기</span></div>
+    <div class="m-item" data-m="4"><span class="num">5</span><span>문 밖 안전지대로 대피하기</span></div>
+    <div class="m-item" data-m="5"><span class="num">6</span><span>외부에서 119 신고하기</span></div>
+  </div>
+
+  <div id="top-right">
+    <div class="stat-box"><div class="label">TIME</div><div class="value" id="time-val">00:00</div></div>
+    <div class="stat-box" id="gas-box"><div class="label">가스농도</div><div class="value" id="gas-val">0%</div></div>
+    <div class="stat-box"><div class="label">SCORE</div><div class="value" id="score-val">0</div></div>
+    <div id="mute-btn" title="음악/효과음 켜기·끄기">🔊</div>
+  </div>
+
+  <div id="crosshair"></div>
+  <div id="gesture-hint"></div>
+  <div id="interact-prompt"><span class="key" id="interact-key">클릭</span><span id="interact-text">상호작용</span></div>
+  <div id="toast"></div>
+  <div id="controls-hint"><b>WASD</b> 이동 &nbsp; <b>드래그</b> 시점 회전 &nbsp; <b>클릭/누르기</b> 상호작용 &nbsp; <b>ESC</b> 일시정지</div>
+  <div id="vignette-base"></div>
+  <div id="grain-overlay"></div>
+  <div id="vignette"></div>
+  <div id="mission-flash"></div>
+  <div id="safety-strip"><span>⚠ 실내 전기 조작 금지</span><span>자연 환기</span><span>대피 후 119</span></div>
+  <div id="caption-box"></div>
+  <div id="cutscene-skip">클릭하여 건너뛰기</div>
+  <div id="eyelid-overlay" style="opacity:0;"></div>
+</div>
+
+<!-- Start overlay -->
+<div class="overlay" id="start-overlay">
+  <div class="card">
+    <div class="eyebrow">한국가스안전공사 · AI 게임 공모전 출품작</div>
+    <h1>가스안전 점검 미션 3D</h1>
+    <p>라면을 끓인 뒤 수상한 가스 냄새를 맡았습니다. <b style="color:#f2c94c">실제 누출 의심 상황에서는 원인을 찾거나 수리하지 마세요.</b><br>
+    전기 조작을 피하고, 안전한 범위에서 차단·자연 환기·대피·신고 순서로 대응하세요.</p>
+    <div class="safety-flow" aria-label="안전 대응 순서">
+      <span class="flow-step">안전 차단</span><span class="flow-arrow">→</span><span class="flow-step">자연 환기</span><span class="flow-arrow">→</span><span class="flow-step">대피</span><span class="flow-arrow">→</span><span class="flow-step">119 신고</span>
+    </div>
+    <div class="control-icons">
+      <div class="ci"><span class="glyph">⌨️</span><span class="label">WASD<br>이동</span></div>
+      <div class="ci"><span class="glyph">🖱️</span><span class="label">드래그<br>시점 회전</span></div>
+      <div class="ci"><span class="glyph">👆</span><span class="label">클릭 / 누르기<br>상호작용</span></div>
+      <div class="ci"><span class="glyph">💨</span><span class="label">가스농도<br>계속 상승</span></div>
+    </div>
+    <button class="btn" id="btn-start">점검 시작</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="loading">
+  <div class="spin"></div>
+  <p>주방 공간을 불러오는 중...</p>
+</div>
+
+<!-- Pause overlay -->
+<div class="overlay hidden" id="pause-overlay">
+  <div class="card" style="text-align:center;">
+    <div class="eyebrow">일시정지</div>
+    <h1 style="font-size:24px;">잠시 멈췄습니다</h1>
+    <p>계속하려면 아래 버튼을 눌러 화면을 다시 클릭하세요.</p>
+    <button class="btn" id="btn-resume">계속하기</button>
+  </div>
+</div>
+
+<!-- Info card overlay (education beats) -->
+<div class="overlay hidden" id="info-overlay">
+  <div class="card">
+    <div class="eyebrow" id="info-eyebrow">안전 상식</div>
+    <h1 id="info-title"></h1>
+    <p id="info-body"></p>
+    <button class="btn" id="btn-info-ok">확인했습니다</button>
+  </div>
+</div>
+
+<!-- Quiz overlay -->
+<div class="overlay hidden" id="quiz-overlay">
+  <div class="card">
+    <div class="eyebrow">안전 수칙 퀴즈</div>
+    <h1 id="quiz-question" style="font-size:20px;"></h1>
+    <div id="quiz-options"></div>
+    <div id="quiz-feedback"></div>
+    <button class="btn hidden" id="btn-quiz-next">다음으로</button>
+  </div>
+</div>
+
+<!-- Phone close-up report scene -->
+<div class="overlay hidden" id="phone-overlay">
+  <div class="phone-shell">
+    <div class="phone-notch"></div>
+    <div class="phone-screen">
+      <div id="phone-dialing" class="phone-state">
+        <div class="phone-num">119</div>
+        <div class="phone-status">연결 중<span class="dots"></span></div>
+        <div style="font-size:12.5px; color:#8ea0bd; margin-top:16px; line-height:1.6;">가스 누출은 스스로 완전히 해결하기 어려운 위험 상황입니다.<br>전문가의 확인을 받기 위해 신고가 필요해요.</div>
+      </div>
+      <div id="phone-quiz" class="phone-state hidden">
+        <div class="phone-eyebrow">상담원 질문</div>
+        <div id="phone-quiz-q" class="phone-q"></div>
+        <div id="phone-quiz-opts"></div>
+        <div id="phone-quiz-fb"></div>
+        <button class="btn hidden" id="btn-phone-next" style="padding:10px 22px; font-size:13px;">신고 완료</button>
+      </div>
+      <div id="phone-done" class="phone-state hidden">
+        <div class="phone-check">✅</div>
+        <div class="phone-status">신고가 접수되었습니다</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- End overlay -->
+<div class="overlay hidden" id="end-overlay">
+  <div class="card">
+    <div class="eyebrow" id="end-eyebrow">미션 결과</div>
+    <h1 id="end-title">모든 미션 완료!</h1>
+    <div class="rank" id="end-rank"></div>
+    <p id="end-desc"></p>
+    <div id="result-stats">
+      <div class="rstat"><div class="n" id="r-time">00:00</div><div class="l">소요 시간</div></div>
+      <div class="rstat"><div class="n" id="r-score">0</div><div class="l">최종 점수</div></div>
+      <div class="rstat"><div class="n" id="r-mistake">0</div><div class="l">감점 횟수</div></div>
+    </div>
+    <p style="font-size:12px; color:#8ea0bd; margin-top:-10px;" id="r-multiplier"></p>
+    <p style="border-top:1px solid rgba(255,255,255,0.08); padding-top:14px; margin-top:6px;"><b style="color:var(--yellow);">점검관 코멘트</b><br><span id="inspector-comment"></span></p>
+    <button class="btn" id="btn-restart">다시 도전하기</button>
+  </div>
+</div>
+
+<div id="mobile-warn">
+  <div class="card">
+    <div class="eyebrow">안내</div>
+    <h1 style="font-size:20px;">PC 환경에서 플레이해주세요</h1>
+    <p>이 시뮬레이션은 키보드(WASD)와 마우스 조작이 필요합니다. PC 브라우저로 접속해주세요.</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+
+  if(/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)){
+    document.getElementById('mobile-warn').style.display='flex';
+  }
+
+  /* ============ THREE.JS SETUP ============ */
+  const wrap = document.getElementById('canvas-wrap');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x24354f);
+  scene.fog = new THREE.Fog(0x24354f, 11, 30);
+
+  const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(-1.0, 1.65, 0.6);
+
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // soft-edged shadows instead of hard-edged PCF — reads far less "game-jam"
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  wrap.appendChild(renderer.domElement);
+
+  // ---- Procedural environment map ----
+  // This is the single biggest lever for "realistic" PBR materials: every
+  // metallic/glossy surface (pipes, valves, appliances, glass) samples this
+  // as its reflection, so they show soft directional highlights and a sense
+  // of a real room around them instead of flat, matte color. Built entirely
+  // from a canvas gradient (bright "sky/ceiling" band, mid room-tone band,
+  // darker "floor" band) — no external HDRI file needed.
+  function buildRoomEnvironment(){
+    const w = 512, h = 256;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createLinearGradient(0,0,0,h);
+    grad.addColorStop(0.00, '#fdf6e3');
+    grad.addColorStop(0.18, '#eef2f6');
+    grad.addColorStop(0.45, '#b9c6d6');
+    grad.addColorStop(0.62, '#8a94a3');
+    grad.addColorStop(1.00, '#4a4438');
+    ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+    // a soft warm "window/light" bloom smear so metal picks up a highlight
+    for(let i=0;i<3;i++){
+      const bx = w*(0.2+i*0.32), by = h*0.22, r = 70;
+      const bgrad = ctx.createRadialGradient(bx,by,0,bx,by,r);
+      bgrad.addColorStop(0,'rgba(255,244,214,0.85)');
+      bgrad.addColorStop(1,'rgba(255,244,214,0)');
+      ctx.fillStyle = bgrad; ctx.fillRect(bx-r,by-r,r*2,r*2);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+  // Prefilter through PMREMGenerator (core three.js, no extra import needed)
+  // so rough/matte metal surfaces get a properly blurred reflection instead
+  // of a raw, aliased mirror image — this is what makes it read as real
+  // ambient light bouncing around the room rather than a mirrored sticker.
+  const _envRaw = buildRoomEnvironment();
+  const _pmrem = new THREE.PMREMGenerator(renderer);
+  _pmrem.compileEquirectangularShader();
+  scene.environment = _pmrem.fromEquirectangular(_envRaw).texture;
+  _envRaw.dispose();
+  _pmrem.dispose();
+
+  // Shared soft-glow sprite generator — a cheap stand-in for real bloom
+  // post-processing (which would need extra non-core modules to wire up
+  // reliably). One radial-gradient texture, tinted and sized per light, adds
+  // a warm halo around bulbs/windows so they read as glowing light sources
+  // instead of small flat-colored shapes.
+  const _glowCanvas = document.createElement('canvas');
+  _glowCanvas.width = 128; _glowCanvas.height = 128;
+  const _gctx = _glowCanvas.getContext('2d');
+  const _gGrad = _gctx.createRadialGradient(64,64,0,64,64,64);
+  _gGrad.addColorStop(0, 'rgba(255,255,255,0.95)');
+  _gGrad.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+  _gGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  _gctx.fillStyle = _gGrad; _gctx.fillRect(0,0,128,128);
+  const _glowTex = new THREE.CanvasTexture(_glowCanvas);
+  function makeGlowSprite(color, scale, position, opacity){
+    const mat = new THREE.SpriteMaterial({
+      map:_glowTex, color:color, transparent:true, opacity:opacity!==undefined?opacity:0.5,
+      depthWrite:false, blending:THREE.AdditiveBlending
+    });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(scale, scale, 1);
+    spr.position.copy(position);
+    return spr;
+  }
+
+  // Drop-in replacement for BoxGeometry(width, height, depth) with rounded
+  // vertical edges and a soft bevel — the single cheapest thing that makes a
+  // scene built from primitives stop reading as "boxy programmer art".
+  // Real furniture almost never has perfectly sharp 90° edges; this gets
+  // most of that visual benefit for a few extra vertices, no new assets.
+  function roundedBoxGeometry(width, height, depth, radius, bevel){
+    bevel = bevel !== undefined ? bevel : 0.008;
+    const w = width/2, d = depth/2;
+    const r = Math.min(radius, w, d);
+    const shape = new THREE.Shape();
+    shape.moveTo(-w+r, -d);
+    shape.lineTo(w-r, -d);
+    shape.quadraticCurveTo(w, -d, w, -d+r);
+    shape.lineTo(w, d-r);
+    shape.quadraticCurveTo(w, d, w-r, d);
+    shape.lineTo(-w+r, d);
+    shape.quadraticCurveTo(-w, d, -w, d-r);
+    shape.lineTo(-w, -d+r);
+    shape.quadraticCurveTo(-w, -d, -w+r, -d);
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth:height, bevelEnabled:true, bevelThickness:bevel, bevelSize:bevel, bevelSegments:2, curveSegments:4, steps:1
+    });
+    geo.rotateX(-Math.PI/2);
+    geo.translate(0, -height/2, 0);
+    return geo;
+  }
+
+  // ---- Procedural wood grain ----
+  // A lot of the furniture (nightstand, headboard, TV stand, cabinet doors,
+  // bed frame, dining table, door frame) was just a flat solid color —
+  // reads as painted plastic, not wood. This draws actual long, wavy grain
+  // striations plus darker knots, tinted per-call so each piece can still
+  // have its own wood tone while sharing one grain pattern. Returned as a
+  // {map, bumpMap} pair so the grain also catches light as real depth.
+  const _woodGrainCache = {};
+  function makeWoodTexture(baseHex, streakHex, repeatX, repeatY){
+    const key = baseHex+'_'+streakHex;
+    if(!_woodGrainCache[key]){
+      const w=256,h=256;
+      const c = document.createElement('canvas'); c.width=w; c.height=h;
+      const ctx = c.getContext('2d');
+      const toRgb = (hex)=>[(hex>>16)&255,(hex>>8)&255,hex&255];
+      const base = toRgb(baseHex), streak = toRgb(streakHex);
+      ctx.fillStyle = `rgb(${base[0]},${base[1]},${base[2]})`;
+      ctx.fillRect(0,0,w,h);
+      for(let i=0;i<34;i++){
+        const y0 = (i/34)*h + (Math.random()-0.5)*4;
+        const amp = 3+Math.random()*5;
+        const freq = 0.02+Math.random()*0.02;
+        const a = 0.12+Math.random()*0.18;
+        ctx.strokeStyle = `rgba(${streak[0]},${streak[1]},${streak[2]},${a})`;
+        ctx.lineWidth = 1+Math.random()*1.6;
+        ctx.beginPath();
+        for(let x=0;x<=w;x+=4){
+          const y = y0 + Math.sin(x*freq + i)*amp + Math.sin(x*freq*2.3+i*2)*amp*0.4;
+          if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+      }
+      // a couple of darker knots for realism
+      for(let k=0;k<3;k++){
+        const kx = Math.random()*w, ky = Math.random()*h, kr = 4+Math.random()*5;
+        const g = ctx.createRadialGradient(kx,ky,0,kx,ky,kr);
+        g.addColorStop(0, `rgba(${streak[0]},${streak[1]},${streak[2]},0.45)`);
+        g.addColorStop(1, `rgba(${streak[0]},${streak[1]},${streak[2]},0)`);
+        ctx.fillStyle = g; ctx.fillRect(kx-kr,ky-kr,kr*2,kr*2);
+      }
+      const map = new THREE.CanvasTexture(c);
+      map.wrapS = map.wrapT = THREE.RepeatWrapping;
+      // bump version: same strokes, but plain grayscale so it reads as
+      // height, not color
+      const bc = document.createElement('canvas'); bc.width=w; bc.height=h;
+      const bctx = bc.getContext('2d');
+      bctx.fillStyle = '#808080'; bctx.fillRect(0,0,w,h);
+      bctx.drawImage(c,0,0);
+      bctx.globalCompositeOperation = 'saturation';
+      const bump = new THREE.CanvasTexture(bc);
+      bump.wrapS = bump.wrapT = THREE.RepeatWrapping;
+      _woodGrainCache[key] = {map, bump};
+    }
+    const entry = _woodGrainCache[key];
+    const map = entry.map.clone(); map.needsUpdate = true;
+    const bump = entry.bump.clone(); bump.needsUpdate = true;
+    map.repeat.set(repeatX||1, repeatY||1);
+    bump.repeat.set(repeatX||1, repeatY||1);
+    return {map, bump};
+  }
+  function woodMaterial(baseHex, streakHex, repeatX, repeatY, extra){
+    const {map, bump} = makeWoodTexture(baseHex, streakHex, repeatX, repeatY);
+    return new THREE.MeshStandardMaterial(Object.assign({map, bumpMap:bump, bumpScale:0.01, roughness:0.6}, extra||{}));
+  }
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* ============ AUDIO ============ */
+  let audioCtx = null, masterGain = null, sfxGain = null;
+  let alarmTimer = null;
+  const bgmAudio = new Audio();
+  bgmAudio.loop = true;
+  bgmAudio.volume = 0.55;
+  bgmAudio.src = '';
+
+  function initAudio(){
+    if(audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain(); masterGain.gain.value = 1;
+    masterGain.connect(audioCtx.destination);
+    sfxGain = audioCtx.createGain(); sfxGain.gain.value = 0.7;
+    sfxGain.connect(masterGain);
+    if(bgmAudio.src){ bgmAudio.play().catch(()=>{}); }
+    startBackgroundMusic();
+  }
+
+  /* Procedurally generated background music — no external mp3 needed (and no
+     copyright question). Short, bright, xylophone-like plucks on a C major
+     pentatonic scale, looping gently. (An earlier version used slow, low,
+     detuned minor chords — technically "ambient," but that combination is
+     exactly the horror-game drone recipe, which is why it read as scary
+     instead of calm. This version avoids all three ingredients: no minor
+     chords, no detuning, no long sustained low tones.)
+     This was just a single melody line with an occasional octave-doubling —
+     technically music, but too thin to read as an actual soundtrack. Adding
+     a soft root-note bass and a sustained major-triad pad underneath, both
+     following a simple C–F–G–C chord loop, so the melody actually sits on
+     top of harmony instead of alone. */
+  let musicGain = null, musicFilter = null, musicTimer = null, melodyStep = 0;
+  const MUSIC_NOTES = [261.63, 293.66, 329.63, 392.00, 440.00]; // C D E G A — C major pentatonic, no dissonant intervals
+  const MELODY_PATTERN = [0,2,4,3,2,1,0,2,3,4,2,0, 0,1,3,2,4,3,2,0,1,2,0,4];
+  const CHORD_LOOP = [ // C major, F major, G major, C major — all major, no minor/detuned tension
+    [130.81,164.81,196.00],
+    [174.61,220.00,261.63],
+    [196.00,246.94,293.66],
+    [130.81,164.81,196.00]
+  ];
+  const CHORD_STEPS = 6; // one chord per 6 melody notes -> 4 chords line up with the 24-step melody loop
+  let chordIndex = -1;
+  function playChordAndBass(){
+    if(!audioCtx || !musicGain) return;
+    chordIndex = (chordIndex+1) % CHORD_LOOP.length;
+    const chord = CHORD_LOOP[chordIndex];
+    const t0 = audioCtx.currentTime;
+    const segDur = 0.43 * CHORD_STEPS;
+    // soft sustained pad — three long, quiet sine tones for the triad
+    chord.forEach(freq=>{
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.02, t0+0.4);
+      g.gain.setValueAtTime(0.02, t0+segDur-0.3);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+segDur+0.3);
+      osc.connect(g).connect(musicFilter);
+      osc.start(t0); osc.stop(t0+segDur+0.35);
+    });
+    // gentle root-note bass pulse, kept in a warm mid-low register rather than
+    // a rumbling sub-bass so it reads as friendly, not ominous
+    const bass = audioCtx.createOscillator();
+    bass.type = 'sine';
+    bass.frequency.value = chord[0];
+    const bg = audioCtx.createGain();
+    bg.gain.setValueAtTime(0.0001, t0);
+    bg.gain.linearRampToValueAtTime(0.06, t0+0.05);
+    bg.gain.exponentialRampToValueAtTime(0.0001, t0+segDur*0.85);
+    bass.connect(bg).connect(musicFilter);
+    bass.start(t0); bass.stop(t0+segDur);
+  }
+  function playMelodyNote(){
+    if(!audioCtx || !musicGain) return;
+    if(melodyStep % CHORD_STEPS === 0) playChordAndBass();
+    const t0 = audioCtx.currentTime;
+    const freq = MUSIC_NOTES[MELODY_PATTERN[melodyStep % MELODY_PATTERN.length]];
+    melodyStep++;
+    // main pluck: quick attack, gentle decay — reads as a soft marimba/toy piano note
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.075, t0+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+0.85);
+    osc.connect(g).connect(musicFilter);
+    osc.start(t0); osc.stop(t0+0.9);
+    // soft warm undertone an octave down, only on the strong beats, for body
+    if(melodyStep % 4 === 0){
+      const osc2 = audioCtx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.value = freq/2;
+      const g2 = audioCtx.createGain();
+      g2.gain.setValueAtTime(0.0001, t0);
+      g2.gain.linearRampToValueAtTime(0.045, t0+0.04);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0+1.3);
+      osc2.connect(g2).connect(musicFilter);
+      osc2.start(t0); osc2.stop(t0+1.4);
+    }
+    musicTimer = setTimeout(playMelodyNote, 430);
+  }
+  function startBackgroundMusic(){
+    if(musicGain) return;
+    musicGain = audioCtx.createGain();
+    musicGain.gain.value = 0.45;
+    musicGain.connect(masterGain);
+    musicFilter = audioCtx.createBiquadFilter();
+    musicFilter.type = 'lowpass';
+    musicFilter.frequency.value = 3400; // bright and open, not murky
+    musicFilter.connect(musicGain);
+    chordIndex = -1;
+    melodyStep = 0;
+    playMelodyNote();
+  }
+  function setMuted(m){
+    gameState.muted = m;
+    if(masterGain) masterGain.gain.setTargetAtTime(m?0:1, audioCtx.currentTime, 0.1);
+    bgmAudio.muted = m;
+    document.getElementById('mute-btn').textContent = m ? '🔇' : '🔊';
+  }
+  function playTone(freq, dur, vol, type, dest){
+    if(!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = type || 'triangle'; osc.frequency.value = freq;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.linearRampToValueAtTime(vol, t0+0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    osc.connect(g).connect(dest || sfxGain);
+    osc.start(t0); osc.stop(t0+dur+0.05);
+  }
+  function playClick(){ playTone(880,0.08,0.07,'sine'); }
+  function playSuccess(){ [523.25,659.25,784.0,1046.5].forEach((f,i)=> setTimeout(()=>playTone(f,0.4,0.09,'triangle'), i*95)); }
+  function playWarning(){ playTone(196,0.28,0.11,'sawtooth'); setTimeout(()=>playTone(174,0.28,0.09,'sawtooth'),140); }
+  function playQuizWrong(){ playTone(160,0.35,0.12,'sawtooth'); }
+  function playDoor(){ playTone(140,0.5,0.1,'square'); }
+  function playExplosion(){
+    playTone(70,0.5,0.22,'sawtooth');
+    setTimeout(()=>playTone(48,0.6,0.18,'square'),40);
+    setTimeout(()=>playTone(110,0.3,0.12,'sawtooth'),90);
+  }
+  function playFootstep(){
+    if(!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    const dur = 0.085;
+    const bufferSize = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<bufferSize;i++){
+      const decay = Math.pow(1 - i/bufferSize, 2.4);
+      data[i] = (Math.random()*2-1) * decay;
+    }
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 230 + Math.random()*130;
+    filter.Q.value = 0.6;
+
+    const gain = audioCtx.createGain();
+    const vol = 0.34 + Math.random()*0.08;
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+
+    noise.connect(filter).connect(gain).connect(sfxGain);
+    noise.start(t0);
+    noise.stop(t0+dur+0.02);
+
+    // soft heel tap just after the main impact, for a touch of floor texture
+    const t1 = t0 + 0.018;
+    const tap = audioCtx.createOscillator();
+    tap.type = 'sine'; tap.frequency.value = 150 + Math.random()*50;
+    const tapGain = audioCtx.createGain();
+    tapGain.gain.setValueAtTime(0.06, t1);
+    tapGain.gain.exponentialRampToValueAtTime(0.0001, t1+0.045);
+    tap.connect(tapGain).connect(sfxGain);
+    tap.start(t1); tap.stop(t1+0.05);
+  }
+  function setAlarmLoop(active){
+    if(active && !alarmTimer){
+      alarmTimer = setInterval(()=>playTone(880,0.15,0.09,'square'), 550);
+    } else if(!active && alarmTimer){
+      clearInterval(alarmTimer); alarmTimer = null;
+    }
+  }
+
+  /* ============ ROOM DIMENSIONS ============ */
+  const ROOM_W = 9, ROOM_D = 12, ROOM_H = 3;
+  const DOOR_X = -3.3, DOOR_HALF = 0.65;
+
+  /* ============ LIGHTING ============ */
+  const hemi = new THREE.HemisphereLight(0xc7d8f5, 0x3a2f22, 0.55);
+  scene.add(hemi);
+  const ambientFill = new THREE.AmbientLight(0xfff2df, 0.18);
+  scene.add(ambientFill);
+  const ceilLight = new THREE.PointLight(0xffe9c2, 1.05, 16, 2);
+  ceilLight.position.set(-1, 2.85, -3.7);
+  ceilLight.castShadow = true;
+  ceilLight.shadow.mapSize.set(2048,2048);
+  ceilLight.shadow.radius = 4;
+  ceilLight.shadow.bias = -0.0015; // kills shadow acne without objects visibly "floating"
+  scene.add(ceilLight);
+  const warmFill = new THREE.PointLight(0xffcf8a, 0.45, 11);
+  warmFill.position.set(-3, 1.8, -2);
+  scene.add(warmFill);
+  const coolRim = new THREE.PointLight(0x8fc0ff, 0.3, 11);
+  coolRim.position.set(2.8, 1.9, -2.2);
+  scene.add(coolRim);
+  const hallLight = new THREE.PointLight(0xffe0b0, 0.7, 10, 2);
+  hallLight.position.set(-1.2, 2.7, 1.0);
+  scene.add(hallLight);
+  const utilityLight = new THREE.PointLight(0xeaf1ff, 0.55, 7, 2);
+  utilityLight.position.set(3.6, 2.4, 2.2);
+  scene.add(utilityLight);
+  const porchGlow = new THREE.PointLight(0x9fc4ff, 0.5, 9);
+  porchGlow.position.set(DOOR_X, 2.0, ROOM_D/2+1.5);
+  scene.add(porchGlow);
+  const stripMat = new THREE.MeshBasicMaterial({color:0xffe6b0});
+  const cabinetStrip = new THREE.Mesh(new THREE.BoxGeometry(3.5,0.02,0.05), stripMat);
+  cabinetStrip.position.set(-1.4, 0.86, -ROOM_D/2+0.65);
+  scene.add(cabinetStrip);
+  const cabinetStripLight = new THREE.PointLight(0xffdb99, 0.4, 3);
+  cabinetStripLight.position.copy(cabinetStrip.position);
+  scene.add(cabinetStripLight);
+
+  const lampCord = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.35,6), new THREE.MeshStandardMaterial({color:0x1a1a1a}));
+  lampCord.position.set(-1, ROOM_H-0.18, -3.7);
+  scene.add(lampCord);
+  const lampShade = new THREE.Mesh(new THREE.ConeGeometry(0.26,0.16,20,1,true), new THREE.MeshStandardMaterial({color:0xf2e6cf, side:THREE.DoubleSide, roughness:0.6}));
+  lampShade.position.set(-1, ROOM_H-0.36, -3.7);
+  scene.add(lampShade);
+  const bulbGlow = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,12), new THREE.MeshBasicMaterial({color:0xfff3d4}));
+  bulbGlow.position.set(-1, ROOM_H-0.42, -3.7);
+  scene.add(bulbGlow);
+  scene.add(makeGlowSprite(0xfff0c0, 0.55, bulbGlow.position, 0.6));
+  const lampShade2 = new THREE.Mesh(new THREE.ConeGeometry(0.22,0.14,20,1,true), new THREE.MeshStandardMaterial({color:0xf2e6cf, side:THREE.DoubleSide, roughness:0.6}));
+  lampShade2.position.set(-1.2, ROOM_H-0.32, 1.0);
+  scene.add(lampShade2);
+  scene.add(makeGlowSprite(0xfff0c0, 0.4, lampShade2.position.clone().add(new THREE.Vector3(0,-0.08,0)), 0.45));
+
+  /* ============ ROOM SHELL ============ */
+  const floorCanvas = document.createElement('canvas');
+  floorCanvas.width = 512; floorCanvas.height = 512;
+  const fctx = floorCanvas.getContext('2d');
+  fctx.fillStyle = '#5f4a37'; fctx.fillRect(0,0,512,512);
+  const plankH = 512/8;
+  for(let row=0; row<8; row++){
+    const shade = 40 + Math.random()*24;
+    fctx.fillStyle = `rgb(${58+shade*0.6|0},${45+shade*0.45|0},${34+shade*0.3|0})`;
+    fctx.fillRect(0, row*plankH, 512, plankH-3);
+    fctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    fctx.lineWidth = 2;
+    fctx.strokeRect(0, row*plankH, 512, plankH-3);
+    for(let g=0; g<6; g++){
+      fctx.strokeStyle = 'rgba(0,0,0,0.08)';
+      fctx.beginPath();
+      const gy = row*plankH+4+Math.random()*(plankH-10);
+      fctx.moveTo(0,gy); fctx.lineTo(512,gy+Math.random()*4-2);
+      fctx.stroke();
+    }
+  }
+  const floorTex = new THREE.CanvasTexture(floorCanvas);
+  floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+  floorTex.repeat.set(ROOM_W/2.2, ROOM_D/2.2);
+  // A grayscale copy of the same plank pattern, fed in as a bump map. Flat
+  // MeshStandardMaterial + color map looks like a photo glued onto a
+  // perfectly flat plane; bumpMap gives the plank seams and grain actual
+  // physical depth so they catch light and cast micro-shadows as the lamp
+  // moves, which is what sells "real wood" over "wood-print sticker".
+  const floorBumpCanvas = document.createElement('canvas');
+  floorBumpCanvas.width = 512; floorBumpCanvas.height = 512;
+  const fbctx = floorBumpCanvas.getContext('2d');
+  fbctx.drawImage(floorCanvas, 0, 0);
+  fbctx.globalCompositeOperation = 'source-atop';
+  fbctx.fillStyle = '#808080';
+  fbctx.globalAlpha = 0.75;
+  fbctx.fillRect(0,0,512,512);
+  const floorBumpTex = new THREE.CanvasTexture(floorBumpCanvas);
+  floorBumpTex.wrapS = floorBumpTex.wrapT = THREE.RepeatWrapping;
+  floorBumpTex.repeat.copy(floorTex.repeat);
+  const matFloor = new THREE.MeshStandardMaterial({map:floorTex, bumpMap:floorBumpTex, bumpScale:0.012, roughness:0.85, metalness:0.03});
+
+  // Walls were a single flat color — real painted drywall always has a
+  // faint "orange peel" roller texture that catches raking light at grazing
+  // angles. Built the same way as the ceiling grain, just tiled tighter.
+  const wallCanvas = document.createElement('canvas');
+  wallCanvas.width = 256; wallCanvas.height = 256;
+  const wctx = wallCanvas.getContext('2d');
+  wctx.fillStyle = '#4a6079'; wctx.fillRect(0,0,256,256);
+  wctx.globalAlpha = 0.05;
+  for(let i=0;i<1400;i++){
+    wctx.fillStyle = Math.random()>0.5 ? '#ffffff' : '#000000';
+    wctx.fillRect(Math.random()*256, Math.random()*256, 1.4, 1.4);
+  }
+  wctx.globalAlpha = 1;
+  const wallTex = new THREE.CanvasTexture(wallCanvas);
+  wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
+  wallTex.repeat.set(3,2);
+  const matWall = new THREE.MeshStandardMaterial({map:wallTex, bumpMap:wallTex, bumpScale:0.004, roughness:0.85, side:THREE.DoubleSide});
+  // Faint mottled ceiling texture — previously a single flat color, which read
+  // as a blank white/gray void when the camera looked almost straight up at
+  // it during the wake-up cutscene. This gives it just enough texture to
+  // register as a real surface rather than empty space.
+  // Clean painted ceiling. The previous version used white speckles over a
+  // dark navy base, tiled several times across the room — which is exactly
+  // what mold/mildew looks like on a ceiling. Real interior ceilings are a
+  // plain light off-white with only the faintest "orange peel" paint grain,
+  // so that's what this builds: a light warm-white base with extremely
+  // subtle, low-contrast, non-repeating-looking noise, no dot pattern, no
+  // visible tile seams, and no dark border stroke.
+  const ceilCanvas = document.createElement('canvas');
+  ceilCanvas.width = 512; ceilCanvas.height = 512;
+  const ceilCtx = ceilCanvas.getContext('2d');
+  ceilCtx.fillStyle = '#f0ece2'; ceilCtx.fillRect(0,0,512,512);
+  ceilCtx.globalAlpha = 0.03;
+  ceilCtx.fillStyle = '#8a8272';
+  for(let i=0;i<2600;i++){
+    ceilCtx.fillRect(Math.random()*512, Math.random()*512, 1, 1);
+  }
+  ceilCtx.globalAlpha = 1;
+  const ceilTex = new THREE.CanvasTexture(ceilCanvas);
+  ceilTex.wrapS = ceilTex.wrapT = THREE.RepeatWrapping;
+  ceilTex.repeat.set(2, 3);
+  const matCeil = new THREE.MeshStandardMaterial({map:ceilTex, roughness:0.95});
+
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_D), matFloor);
+  floor.rotation.x = -Math.PI/2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Soft dark ellipse decals laid flat on the floor under heavy furniture —
+  // a cheap stand-in for real ambient occlusion. Point/hemisphere lights
+  // alone leave furniture looking like it's hovering a hair above the
+  // floor; a soft contact shadow right at the base is what actually
+  // grounds an object visually, and it costs one extra transparent mesh.
+  const _contactShadowTex = (()=>{
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const cx = c.getContext('2d');
+    const g = cx.createRadialGradient(64,64,0,64,64,64);
+    g.addColorStop(0, 'rgba(0,0,0,0.55)');
+    g.addColorStop(0.7, 'rgba(0,0,0,0.22)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    cx.fillStyle = g; cx.fillRect(0,0,128,128);
+    return new THREE.CanvasTexture(c);
+  })();
+  function addContactShadow(x, z, rx, rz, opacity){
+    const m = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 24),
+      new THREE.MeshBasicMaterial({map:_contactShadowTex, transparent:true, opacity:opacity!==undefined?opacity:0.8, depthWrite:false})
+    );
+    m.rotation.x = -Math.PI/2;
+    m.scale.set(rx, rz, 1);
+    m.position.set(x, 0.006, z);
+    scene.add(m);
+    return m;
+  }
+
+  const tileCanvas = document.createElement('canvas');
+  tileCanvas.width = 256; tileCanvas.height = 256;
+  const tctx = tileCanvas.getContext('2d');
+  tctx.fillStyle = '#a9b2ba'; tctx.fillRect(0,0,256,256);
+  tctx.strokeStyle = 'rgba(0,0,0,0.25)'; tctx.lineWidth=3;
+  for(let i=0;i<=4;i++){ tctx.beginPath(); tctx.moveTo(i*64,0); tctx.lineTo(i*64,256); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(0,i*64); tctx.lineTo(256,i*64); tctx.stroke(); }
+  const tileTex = new THREE.CanvasTexture(tileCanvas);
+  tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping; tileTex.repeat.set(2,2);
+  const utilFloor = new THREE.Mesh(new THREE.PlaneGeometry(2.7,4.4), new THREE.MeshStandardMaterial({map:tileTex, roughness:0.7}));
+  utilFloor.rotation.x = -Math.PI/2;
+  utilFloor.position.set(3.15, 0.003, 0);
+  scene.add(utilFloor);
+
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_D), matCeil);
+  ceiling.rotation.x = Math.PI/2;
+  ceiling.position.y = ROOM_H;
+  scene.add(ceiling);
+
+  const interactables = [];
+  const solids = [];
+
+  function addSolid(x,z,w,d){
+    solids.push({minX:x-w/2, maxX:x+w/2, minZ:z-d/2, maxZ:z+d/2});
+  }
+
+  const WALL_THICK = 0.14;
+  function makeWall(w,h,x,y,z,ry){
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(w,h,WALL_THICK), matWall);
+    wall.position.set(x,y,z);
+    wall.rotation.y = ry;
+    wall.receiveShadow = true;
+    wall.castShadow = true;
+    scene.add(wall);
+    return wall;
+  }
+  function makeLintel(cx,cz,gapWidth,horizontal){
+    // Inset slightly from the gap edges (rather than overhanging past them into
+    // the wall's own footprint) so the beam never interpenetrates the wall mesh —
+    // that overlap was causing visible z-fighting right where the beam met the
+    // doorway corner.
+    const w = gapWidth - 0.04;
+    const geo = horizontal ? new THREE.BoxGeometry(w,0.12,0.14) : new THREE.BoxGeometry(0.14,0.12,w);
+    const beam = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:0x2e2620, roughness:0.6}));
+    beam.position.set(cx, ROOM_H-0.16, cz);
+    scene.add(beam);
+  }
+
+  makeWall(ROOM_W, ROOM_H, 0, ROOM_H/2, -ROOM_D/2, 0);
+  makeWall(ROOM_D, ROOM_H, -ROOM_W/2, ROOM_H/2, 0, Math.PI/2);
+  makeWall(ROOM_D, ROOM_H, ROOM_W/2, ROOM_H/2, 0, -Math.PI/2);
+  const frontLeftW = (DOOR_X - DOOR_HALF) - (-ROOM_W/2);
+  const frontRightW = (ROOM_W/2) - (DOOR_X + DOOR_HALF);
+  makeWall(frontLeftW, ROOM_H, -ROOM_W/2 + frontLeftW/2, ROOM_H/2, ROOM_D/2, Math.PI);
+  makeWall(frontRightW, ROOM_H, DOOR_X + DOOR_HALF + frontRightW/2, ROOM_H/2, ROOM_D/2, Math.PI);
+  addSolid(-ROOM_W/2 + frontLeftW/2, ROOM_D/2, frontLeftW, 0.15);
+  addSolid(DOOR_X + DOOR_HALF + frontRightW/2, ROOM_D/2, frontRightW, 0.15);
+  addSolid(-ROOM_W/2, 0, 0.15, ROOM_D);
+  addSolid(ROOM_W/2, 0, 0.15, ROOM_D);
+  addSolid(0, -ROOM_D/2, ROOM_W, 0.15);
+
+  const KL_Z = -2.2, KL_DOOR_X = -1.0, KL_HALF = 0.9;
+  const LU_X = 1.8,  LU_DOOR_Z = 0.0,  LU_HALF = 0.9;
+  const LE_Z = 2.2,  LE_OPEN_X = -2.4;
+
+  {
+    const gapMin = KL_DOOR_X - KL_HALF, gapMax = KL_DOOR_X + KL_HALF;
+    const wSeg1 = gapMin - (-ROOM_W/2), cx1 = -ROOM_W/2 + wSeg1/2;
+    const wSeg2 = (ROOM_W/2) - gapMax, cx2 = gapMax + wSeg2/2;
+    makeWall(wSeg1, ROOM_H, cx1, ROOM_H/2, KL_Z, 0);
+    makeWall(wSeg2, ROOM_H, cx2, ROOM_H/2, KL_Z, 0);
+    addSolid(cx1, KL_Z, wSeg1, 0.15);
+    addSolid(cx2, KL_Z, wSeg2, 0.15);
+    makeLintel(KL_DOOR_X, KL_Z, KL_HALF*2, true);
+  }
+  {
+    const gapMin = LU_DOOR_Z - LU_HALF, gapMax = LU_DOOR_Z + LU_HALF;
+    const lSeg1 = gapMin - (KL_Z), cz1 = KL_Z + lSeg1/2;
+    const lSeg2 = (LE_Z) - gapMax, cz2 = gapMax + lSeg2/2;
+    makeWall(lSeg1, ROOM_H, LU_X, ROOM_H/2, cz1, Math.PI/2);
+    makeWall(lSeg2, ROOM_H, LU_X, ROOM_H/2, cz2, Math.PI/2);
+    addSolid(LU_X, cz1, 0.15, lSeg1);
+    addSolid(LU_X, cz2, 0.15, lSeg2);
+    makeLintel(LU_X, LU_DOOR_Z, LU_HALF*2, false);
+  }
+  {
+    const wSeg = (ROOM_W/2) - LE_OPEN_X, cx = LE_OPEN_X + wSeg/2;
+    makeWall(wSeg, ROOM_H, cx, ROOM_H/2, LE_Z, 0);
+    addSolid(cx, LE_Z, wSeg, 0.15);
+  }
+  const threshold = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W/2+LE_OPEN_X-0.1, 0.02, 0.1), new THREE.MeshStandardMaterial({color:0x8a6a45}));
+  threshold.position.set(-ROOM_W/2 + (ROOM_W/2+LE_OPEN_X-0.1)/2, 0.01, LE_Z);
+  scene.add(threshold);
+
+  const baseboard = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W, 0.08, 0.05), new THREE.MeshStandardMaterial({color:0xf2c94c, emissive:0x332a05}));
+  baseboard.position.set(0, 0.04, -ROOM_D/2+0.03);
+  scene.add(baseboard);
+
+  const rug = new THREE.Mesh(new THREE.CircleGeometry(1.0, 32), new THREE.MeshStandardMaterial({color:0x5c3a3a, roughness:1}));
+  rug.rotation.x = -Math.PI/2;
+  rug.position.set(0.2, 0.005, -0.85);
+  rug.receiveShadow = true;
+  scene.add(rug);
+
+  const posterCanvas = document.createElement('canvas');
+  posterCanvas.width = 256; posterCanvas.height = 320;
+  const pctx = posterCanvas.getContext('2d');
+  pctx.fillStyle = '#f2c94c'; pctx.fillRect(0,0,256,320);
+  pctx.fillStyle = '#0a1628'; pctx.fillRect(10,10,236,300);
+  pctx.fillStyle = '#f2c94c';
+  pctx.font = 'bold 28px sans-serif'; pctx.textAlign='center';
+  pctx.fillText('가스안전', 128, 90);
+  pctx.font = 'bold 40px sans-serif';
+  pctx.fillText('4대 수칙', 128, 145);
+  pctx.font = '16px sans-serif'; pctx.fillStyle='#e8edf5';
+  pctx.fillText('사용 후 밸브 잠그기', 128, 195);
+  pctx.fillText('주기적 환기하기', 128, 222);
+  pctx.fillText('냄새나면 즉시 점검', 128, 249);
+  pctx.fillText('이상시 대피 후 신고', 128, 276);
+  const posterTex = new THREE.CanvasTexture(posterCanvas);
+  const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.75,0.95), new THREE.MeshStandardMaterial({map:posterTex, roughness:0.8}));
+  poster.position.set(-ROOM_W/2+0.09, 1.7, -1.2);
+  poster.rotation.y = Math.PI/2;
+  scene.add(poster);
+
+  const bsCanvas = document.createElement('canvas');
+  bsCanvas.width = 256; bsCanvas.height = 128;
+  const bctx = bsCanvas.getContext('2d');
+  bctx.fillStyle = '#e7e6df'; bctx.fillRect(0,0,256,128);
+  bctx.strokeStyle = 'rgba(0,0,0,0.15)'; bctx.lineWidth = 2;
+  for(let i=0;i<=8;i++){ bctx.beginPath(); bctx.moveTo(i*32,0); bctx.lineTo(i*32,128); bctx.stroke(); }
+  for(let i=0;i<=4;i++){ bctx.beginPath(); bctx.moveTo(0,i*32); bctx.lineTo(256,i*32); bctx.stroke(); }
+  const bsTex = new THREE.CanvasTexture(bsCanvas);
+  bsTex.wrapS = bsTex.wrapT = THREE.RepeatWrapping; bsTex.repeat.set(3,1);
+  const backsplash = new THREE.Mesh(new THREE.PlaneGeometry(3.7,0.9), new THREE.MeshStandardMaterial({map:bsTex, roughness:0.6}));
+  backsplash.position.set(-1.4, 1.4, -ROOM_D/2+0.09);
+  scene.add(backsplash);
+
+  /* ============ FURNITURE / OBJECTS ============ */
+  const counterMat = new THREE.MeshStandardMaterial({color:0xd8d3c8, roughness:0.35, metalness:0.15});
+  const counter = new THREE.Mesh(roundedBoxGeometry(3.6, 0.9, 0.6, 0.03), counterMat);
+  counter.position.set(-1.4, 0.45, -ROOM_D/2+0.4);
+  counter.castShadow = true; counter.receiveShadow = true;
+  scene.add(counter);
+  addContactShadow(-1.4, -ROOM_D/2+0.4, 2.1, 0.55, 0.7);
+  addSolid(-1.4, -ROOM_D/2+0.4, 3.6, 0.6);
+  const cabDoorMat = woodMaterial(0x4a3626, 0x2c1a10, 1, 1.6, {roughness:0.55});
+  [[-2.55,-0.63],[-1.4,-0.63],[-0.25,-0.63]].forEach(([dx,dy])=>{
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.05,0.7,0.04), cabDoorMat);
+    door.position.set(dx, 0.35, -ROOM_D/2+0.4+0.29);
+    scene.add(door);
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.16,8), new THREE.MeshStandardMaterial({color:0xc9c9c9, metalness:0.8, roughness:0.25}));
+    handle.rotation.z = Math.PI/2;
+    handle.position.set(dx+0.4, 0.35, -ROOM_D/2+0.4+0.32);
+    scene.add(handle);
+  });
+  const counterLip = new THREE.Mesh(new THREE.BoxGeometry(3.7,0.05,0.66), new THREE.MeshStandardMaterial({color:0xf2c94c, roughness:0.4}));
+  counterLip.position.set(-1.4, 0.9, -ROOM_D/2+0.4);
+  scene.add(counterLip);
+
+  // Real single-burner portable butane stove ("부루스타") — rounded oval body,
+  // one centered burner, a large front control dial, and the canister housed
+  // almost entirely inside a sealed compartment with only a small external
+  // safety shutoff lever exposed (a real feature on these units) instead of
+  // half a canister hanging out in the open.
+  const stoveGroup = new THREE.Group();
+  const stoveBody = new THREE.Mesh(roundedBoxGeometry(0.30,0.095,0.26,0.06), new THREE.MeshStandardMaterial({color:0x33383f, metalness:0.5, roughness:0.35}));
+  stoveBody.position.y = 0.0475;
+  stoveGroup.add(stoveBody);
+  const grate = new THREE.Mesh(new THREE.TorusGeometry(0.078,0.009,6,18), new THREE.MeshStandardMaterial({color:0x0d0d0d, metalness:0.8}));
+  grate.rotation.x = Math.PI/2;
+  grate.position.set(0, 0.105, 0.01);
+  stoveGroup.add(grate);
+  const burnerCap = new THREE.Mesh(new THREE.CylinderGeometry(0.042,0.042,0.02,18), new THREE.MeshStandardMaterial({color:0x1a1a1a}));
+  burnerCap.position.set(0, 0.098, 0.01);
+  stoveGroup.add(burnerCap);
+  // Layered flame: a single flat orange cone read as low-effort. This builds
+  // it from three overlapping cones (blue base near the burner, orange body,
+  // thin yellow-white tip) plus a soft additive glow sprite underneath, so it
+  // has actual color gradation and a hazy edge instead of one hard-edged
+  // solid shape. flameGroup as a whole still just toggles .visible like before.
+  const flameGroup = new THREE.Group();
+  flameGroup.position.set(0, 0.16, 0.01);
+  const flameBase = new THREE.Mesh(
+    new THREE.ConeGeometry(0.032, 0.05, 10),
+    new THREE.MeshBasicMaterial({color:0x5a9bff, transparent:true, opacity:0.85})
+  );
+  flameBase.position.y = -0.03;
+  flameGroup.add(flameBase);
+  const flameBody = new THREE.Mesh(
+    new THREE.ConeGeometry(0.034, 0.12, 10),
+    new THREE.MeshBasicMaterial({color:0xff8a2e, transparent:true, opacity:0.92})
+  );
+  flameGroup.add(flameBody);
+  const flameTip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.016, 0.075, 8),
+    new THREE.MeshBasicMaterial({color:0xffe27a, transparent:true, opacity:0.95})
+  );
+  flameTip.position.y = 0.045;
+  flameGroup.add(flameTip);
+  const flameGlowCanvas = document.createElement('canvas');
+  flameGlowCanvas.width = 64; flameGlowCanvas.height = 64;
+  const fgctx = flameGlowCanvas.getContext('2d');
+  const fgGrad = fgctx.createRadialGradient(32,32,0,32,32,32);
+  fgGrad.addColorStop(0, 'rgba(255,200,120,0.9)');
+  fgGrad.addColorStop(1, 'rgba(255,140,50,0)');
+  fgctx.fillStyle = fgGrad; fgctx.fillRect(0,0,64,64);
+  const flameGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map:new THREE.CanvasTexture(flameGlowCanvas), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+  }));
+  flameGlow.scale.set(0.16,0.16,1);
+  flameGlow.position.y = 0.02;
+  flameGroup.add(flameGlow);
+  stoveGroup.add(flameGroup);
+  const flame = flameGroup; // kept as `flame` so the rest of the game logic (visibility toggles) is unchanged
+  const flameLight = new THREE.PointLight(0xff8a3c, 0.9, 1.4);
+  flameLight.position.set(0, 0.19, 0.01);
+  stoveGroup.add(flameLight);
+  // Large front control dial — much more recognizable as "the stove's knob"
+  // than the old thin bar was.
+  const dialKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.03,0.022,20), new THREE.MeshStandardMaterial({color:0x1b1e21, metalness:0.4, roughness:0.4}));
+  dialKnob.rotation.x = Math.PI/2;
+  dialKnob.position.set(0.075, 0.05, -0.14);
+  stoveGroup.add(dialKnob);
+  const dialMark = new THREE.Mesh(new THREE.BoxGeometry(0.004,0.018,0.002), new THREE.MeshStandardMaterial({color:0xe74c3c}));
+  dialMark.position.set(0.075, 0.058, -0.151);
+  stoveGroup.add(dialMark);
+  stoveGroup.position.set(-2.4, 0.9+0.06, -ROOM_D/2+0.4);
+  scene.add(stoveGroup);
+
+  // A faint seam suggesting the sealed canister compartment on the right end
+  // of the body — the canister itself lives inside and is not visible.
+  const compartmentSeam = new THREE.Mesh(new THREE.BoxGeometry(0.003,0.07,0.2), new THREE.MeshStandardMaterial({color:0x14161a}));
+  compartmentSeam.position.set(0.1, 0.05, 0.01);
+  stoveGroup.add(compartmentSeam);
+
+  // External safety shutoff lever — real portable stoves have exactly this:
+  // a small manual gas-cutoff you can reach without opening the canister
+  // compartment at all, which is a much more accurate (and far less
+  // "random can sticking out the side") way to represent "close the valve"
+  // than exposing half the canister.
+  // External safety shutoff lever — moved onto the front control panel
+  // next to the temperature dial (where a real portable stove's canister
+  // lock actually is) instead of tucked around the side where it was easy
+  // to miss, and enlarged with a backing plate + icon so it reads clearly
+  // as "the thing you interact with" rather than a tiny anonymous nub.
+  const valvePlate = new THREE.Mesh(roundedBoxGeometry(0.075,0.075,0.01,0.01), new THREE.MeshStandardMaterial({color:0x1b1e21, metalness:0.3, roughness:0.5}));
+  valvePlate.position.set(-0.075, 0.05, -0.148);
+  stoveGroup.add(valvePlate);
+  const canGroup = new THREE.Group();
+  canGroup.position.set(-0.075, 0.05, -0.14);
+  stoveGroup.add(canGroup);
+  const leverMount = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.022,14), new THREE.MeshStandardMaterial({color:0x1a1a1a, metalness:0.5}));
+  leverMount.rotation.x = Math.PI/2;
+  canGroup.add(leverMount);
+  const valveKnob = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.024,0.024), new THREE.MeshStandardMaterial({color:0xd23c3c, roughness:0.4, emissive:0x3a0a0a}));
+  valveKnob.position.set(0,0,0.014);
+  valveKnob.name = "valveKnob";
+  canGroup.add(valveKnob);
+  // Tiny "LOCK" icon (a padlock shape drawn on canvas) above the lever so
+  // it's unambiguous what it does even before the interact prompt shows.
+  const valveIconCanvas = document.createElement('canvas');
+  valveIconCanvas.width = 64; valveIconCanvas.height = 64;
+  const victx = valveIconCanvas.getContext('2d');
+  victx.strokeStyle = '#ffd166'; victx.lineWidth = 5; victx.lineCap='round';
+  victx.beginPath(); victx.arc(32,24,11,Math.PI,0); victx.stroke();
+  victx.fillStyle = '#ffd166'; victx.fillRect(16,24,32,26);
+  const valveIconTex = new THREE.CanvasTexture(valveIconCanvas);
+  const valveIcon = new THREE.Mesh(new THREE.PlaneGeometry(0.03,0.03), new THREE.MeshBasicMaterial({map:valveIconTex, transparent:true}));
+  valveIcon.position.set(-0.075, 0.095, -0.153);
+  stoveGroup.add(valveIcon);
+  interactables.push({
+    mesh: canGroup, id:'stoveValve', range:1.8,
+    promptText:'마우스를 누른 채 동그랗게 돌려서 잠그기',
+    enabledCheck: ()=> gameState.mission===0,
+    onInteract: ()=>{} // resolved via the drag-turn gesture (finishValveTurn), not a click
+  });
+  function finishValveTurn(){
+    turningId = null;
+    turnAngleAccum = 0;
+    valveKnob.material.emissive.setHex(0x000000);
+    valveKnob.material.color.setHex(0x8a8a8a);
+    flame.visible = false; flameLight.intensity = 0;
+    completeMission(0, '부탄캔 밸브를 안전하게 잠갔습니다.');
+    showInfoCard('불을 끄고 밸브를 잠갔습니다', '휴대용 가스레인지는 사용 직후 불을 끄고 캔 결합부·밸브 상태를 확인하는 습관이 중요합니다. 지금처럼 가스 냄새가 의심되는 상황에서는 원인을 찾으러 다니지 말고, 안전하게 접근 가능한 메인밸브만 차단한 뒤 자연 환기와 대피를 우선하세요.');
+  }
+  function updateValveTurnVisual(){
+    const t = Math.min(1, turnAngleAccum / VALVE_TURN_TARGET);
+    valveKnob.rotation.z = t * Math.PI * 2.2;
+    const promptEl = document.getElementById('interact-prompt');
+    promptEl.classList.add('show');
+    setGestureHint('turn', t);
+    document.getElementById('interact-text').textContent = `돌리는 중... ${Math.round(t*100)}%`;
+    if(t >= 1) finishValveTurn();
+  }
+
+  /* ============ GAS PIPE (hidden leak) ============ */
+  const pipeMat = new THREE.MeshStandardMaterial({color:0x6b7280, metalness:0.7, roughness:0.3});
+  // (floorConnectorPipe + junctionBox removed — these were permanent decor
+  // meant to accompany the old floor-level horizontal leak spot. That spot
+  // was removed earlier, but this pair kept rendering at floor height near
+  // the kitchen counter regardless, with nothing connecting to it — exactly
+  // the "random bolt floating by the cabinet" bug.)
+
+  const leakFixture = new THREE.Group();
+  const fxPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.032,0.5,10), pipeMat);
+  leakFixture.add(fxPipe);
+  const fxCapTop = new THREE.Mesh(new THREE.CylinderGeometry(0.042,0.042,0.045,10), pipeMat);
+  fxCapTop.position.y = 0.27;
+  leakFixture.add(fxCapTop);
+  const fxCapBottom = fxCapTop.clone();
+  fxCapBottom.position.y = -0.27;
+  leakFixture.add(fxCapBottom);
+  // (small mounting-bracket box removed — from certain angles it read as a
+  // floating bolt/screw head detached from the pipe, which is exactly the
+  // "what is this random bolt" bug)
+  const crackBand = new THREE.Mesh(new THREE.TorusGeometry(0.05,0.009,6,16), new THREE.MeshStandardMaterial({color:0x8a5a2a, roughness:0.9}));
+  crackBand.rotation.x = Math.PI/2;
+  leakFixture.add(crackBand);
+
+  // Floor support: previously computed in the fixture's LOCAL space and
+  // dependent on getting the rotation math exactly right per spot — any
+  // mismatch there is exactly what left the pipe visibly floating with
+  // nothing under it. This version is dead simple and can't get that wrong:
+  // it's a separate, unrotated, always-vertical column positioned in WORLD
+  // space, running straight from the floor (y=0) up to the leak's height,
+  // for every spot with no branching logic required.
+  const floorRiser = new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,1,10), pipeMat);
+  scene.add(floorRiser);
+  const floorFlange = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.075,0.02,16), new THREE.MeshStandardMaterial({color:0x555560, metalness:0.5, roughness:0.4}));
+  scene.add(floorFlange);
+
+  // A bare pipe just sticking out of the wall/floor with nothing holding it
+  // reads as a stray fixture instead of an actual gas line. A wall clamp
+  // partway up the riser, plus a small yellow caution sticker, make it read
+  // as real (if slightly worn) gas plumbing instead of random set dressing.
+  const riserClamp = new THREE.Mesh(new THREE.TorusGeometry(0.034,0.012,8,14), new THREE.MeshStandardMaterial({color:0x3a3f47, metalness:0.6, roughness:0.4}));
+  riserClamp.rotation.x = Math.PI/2;
+  scene.add(riserClamp);
+  const cautionCanvas = document.createElement('canvas');
+  cautionCanvas.width = 64; cautionCanvas.height = 64;
+  const cctx = cautionCanvas.getContext('2d');
+  cctx.fillStyle = '#f2c94c'; cctx.fillRect(0,0,64,64);
+  cctx.fillStyle = '#16273f'; cctx.font = 'bold 16px sans-serif'; cctx.textAlign = 'center';
+  cctx.fillText('가스', 32, 28); cctx.fillText('배관', 32, 48);
+  const cautionTex = new THREE.CanvasTexture(cautionCanvas);
+  const cautionSticker = new THREE.Mesh(new THREE.PlaneGeometry(0.09,0.09), new THREE.MeshStandardMaterial({map:cautionTex, side:THREE.DoubleSide}));
+  scene.add(cautionSticker);
+
+  scene.add(leakFixture);
+
+  // All three spots share the same low, consistent height now (crack at 1m,
+  // riser rising ~0.95m from the floor to meet it) instead of each spot using
+  // whatever height happened to be convenient — a riser that had to reach up
+  // to a 1.65m crack turned into a room-spanning pole. Positions were also
+  // re-checked against existing furniture (plants, mirror, bookshelf) so the
+  // pipe doesn't spawn through a potted plant like it just did.
+  const LEAK_SPOTS = [
+    // Entrance hallway, right wall — clear of all furniture.
+    { pos:new THREE.Vector3(ROOM_W/2-0.12, 1.0, 3.5), rot:new THREE.Euler(0,-Math.PI/2,0) },
+    // Was still on the same wall as the bed/mirror/hallway hooks (just further
+    // down it) and kept reading as "next to the bed" from where the player
+    // naturally starts. Moved to the south wall behind the entrance door,
+    // right of the doorway — nothing is placed against that wall at all.
+    { pos:new THREE.Vector3(1.0, 1.0, ROOM_D/2-0.12), rot:new THREE.Euler(0,Math.PI,0) },
+    // Utility-room right wall, clear of the washer/basket/plant on that side
+    { pos:new THREE.Vector3(ROOM_W/2-0.12, 1.0, -0.6), rot:new THREE.Euler(0,-Math.PI/2,0) }
+  ];
+  let leakPos = new THREE.Vector3().copy(LEAK_SPOTS[0].pos);
+  const smokeCanvas = document.createElement('canvas');
+  smokeCanvas.width = 128; smokeCanvas.height = 128;
+  const smctx = smokeCanvas.getContext('2d');
+  // Was a single perfect radial-gradient circle — reads as a uniform round
+  // ball rather than smoke. Overlapping soft blobs at randomized offsets and
+  // sizes gives an irregular, wispy silhouette instead.
+  const smokeBlobs = [
+    [64,64,44],[42,50,26],[86,52,28],[58,86,24],[80,84,22],
+    [36,80,18],[92,72,18],[50,34,20],[76,32,18]
+  ];
+  smokeBlobs.forEach(([bx,by,br])=>{
+    const g = smctx.createRadialGradient(bx,by,0,bx,by,br);
+    g.addColorStop(0, 'rgba(195,255,150,0.8)');
+    g.addColorStop(0.55, 'rgba(160,235,120,0.4)');
+    g.addColorStop(1, 'rgba(160,235,120,0)');
+    smctx.fillStyle = g;
+    smctx.fillRect(bx-br, by-br, br*2, br*2);
+  });
+  const smokeTex = new THREE.CanvasTexture(smokeCanvas);
+  const gasParticleGroup = new THREE.Group();
+  const gasParticles = [];
+  for(let i=0;i<42;i++){
+    const mat = new THREE.SpriteMaterial({map:smokeTex, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending});
+    const p = new THREE.Sprite(mat);
+    const scale = 0.12 + Math.random()*0.16;
+    p.scale.set(scale,scale,1);
+    // LPG·부탄은 공기보다 무거워 위로 솟는 연기처럼 보이면 안 된다.
+    // 배관 아래쪽에서 바닥으로 내려와 낮은 곳을 따라 퍼지도록 시작한다.
+    p.position.copy(leakPos).add(new THREE.Vector3((Math.random()-0.5)*0.28,-0.72-Math.random()*0.16,(Math.random()-0.5)*0.28));
+    gasParticleGroup.add(p);
+    gasParticles.push({mesh:p, speed:0.15+Math.random()*0.2, offset:Math.random()*10, baseScale:scale});
+  }
+  scene.add(gasParticleGroup);
+  const jetLight = new THREE.PointLight(0x9be86e, 0, 2.2);
+  scene.add(jetLight);
+
+  // Duct-tape repair marker. IMPORTANT: this is a child of leakFixture (not a
+  // free-floating scene object) so it automatically inherits the fixture's
+  // position AND rotation for whichever leak spot gets picked — previously it
+  // never rotated to match the pipe, so on a vertical pipe it rendered as a
+  // flat disc lying perpendicular to the pipe (looked like a ring skewered
+  // sideways through the pole). Sized closer to the pipe's own radius (0.032)
+  // instead of ballooning out to 0.08, with more segments so it reads as a
+  // smooth tape wrap rather than a chunky low-poly blob.
+  const tapeMesh = new THREE.Mesh(
+    new THREE.TorusGeometry(0.046, 0.015, 12, 28),
+    new THREE.MeshStandardMaterial({color:0x8a9096, roughness:0.7, metalness:0.1})
+  );
+  tapeMesh.rotation.x = Math.PI/2; // matches crackBand's orientation — wraps around the pipe's axis
+  tapeMesh.position.y = 0.05; // offset slightly from the crack indicator so the two don't z-fight
+  tapeMesh.visible = false;
+  leakFixture.add(tapeMesh);
+
+  let lastLeakHintAt = -Infinity;
+  let detectorBeepTimer = 0;
+  function randomizeLeak(){
+    const chosen = LEAK_SPOTS[Math.floor(Math.random()*LEAK_SPOTS.length)];
+    leakPos.copy(chosen.pos);
+    leakFixture.position.copy(chosen.pos);
+    leakFixture.rotation.copy(chosen.rot);
+    jetLight.position.copy(chosen.pos);
+    tapeMesh.visible = false;
+    lastLeakHintAt = -Infinity;
+
+    // Always draw a support column from the floor straight up to the leak,
+    // in world space — independent of whatever rotation the fixture itself
+    // has, so there's no longer any per-spot math that can leave it floating.
+    const riserHeight = Math.max(0.04, chosen.pos.y - 0.05);
+    floorRiser.position.set(chosen.pos.x, riserHeight/2, chosen.pos.z);
+    floorRiser.scale.y = riserHeight;
+    floorFlange.position.set(chosen.pos.x, 0.011, chosen.pos.z);
+    riserClamp.position.set(chosen.pos.x, riserHeight*0.55, chosen.pos.z);
+    riserClamp.rotation.y = chosen.rot.y;
+    // Sticker sits flush on whichever wall the fixture is mounted against,
+    // just offset from the pipe along that wall's outward normal.
+    const stickerOffset = new THREE.Vector3(0, 0, 0.06).applyEuler(chosen.rot);
+    cautionSticker.position.set(chosen.pos.x + stickerOffset.x, riserHeight*0.75, chosen.pos.z + stickerOffset.z);
+    cautionSticker.rotation.y = chosen.rot.y;
+
+    gasParticles.forEach(p=>{
+      p.mesh.position.copy(leakPos).add(new THREE.Vector3((Math.random()-0.5)*0.28,-0.72-Math.random()*0.16,(Math.random()-0.5)*0.28));
+      p.mesh.material.opacity = 0;
+    });
+  }
+
+  interactables.push({
+    mesh: crackBand, id:'leakPoint', range:2.8,
+    promptText:'평상시 점검: 비눗물로 연결부 확인',
+    // 비눗물은 평상시 연결부 점검에는 유효하지만, 가스 냄새가 나는
+    // 긴급 상황에서 플레이어가 누출 지점을 찾아가 만지도록 유도하면 안 된다.
+    // 긴급 대응 시나리오에서는 이 상호작용을 비활성화한다.
+    enabledCheck: ()=> false,
+    onInteract: ()=>{} // resolved by holding the mouse down on it (finishLeakSpray)
+  });
+  function finishLeakSpray(){
+    holdingId = null;
+    sprayProgress = 0;
+    if(leakFixture.userData.bubbleFx){
+      leakFixture.remove(leakFixture.userData.bubbleFx);
+      leakFixture.userData.bubbleFx = null;
+    }
+    if(!gameState.leakFound){
+      gameState.leakFound = true;
+      completeMission(1, '누출 지점을 발견했습니다!');
+    }
+    tapeMesh.visible = true;
+    gasParticles.forEach(p=>p.mesh.material.opacity = 0);
+    gameState.leakSealed = true;
+    checkMission2Complete();
+  }
+  function cancelLeakSpray(){
+    holdingId = null;
+    sprayProgress = 0;
+    if(leakFixture.userData.bubbleFx){
+      leakFixture.remove(leakFixture.userData.bubbleFx);
+      leakFixture.userData.bubbleFx = null;
+    }
+  }
+  function updateLeakSprayVisual(dt){
+    sprayProgress += dt;
+    const t = Math.min(1, sprayProgress / LEAK_SPRAY_TARGET);
+    const promptEl = document.getElementById('interact-prompt');
+    promptEl.classList.add('show');
+    setGestureHint('hold', t);
+    document.getElementById('interact-text').textContent = `비눗물 분사 중... ${Math.round(t*100)}%`;
+    if(!leakFixture.userData.bubbleFx){
+      const bubbleMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, opacity:0.6, roughness:0.2});
+      const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,12), bubbleMat);
+      bubble.position.copy(crackBand.position);
+      leakFixture.add(bubble);
+      leakFixture.userData.bubbleFx = bubble;
+    }
+    leakFixture.userData.bubbleFx.scale.setScalar(0.6 + t*1.8);
+    if(t >= 1) finishLeakSpray();
+  }
+
+  /* ============ FIRE EXTINGUISHER (optional bonus check) ============ */
+  // Wall-mounted on the kitchen's left wall, clear of the poster/bookshelf.
+  // A quick hold-to-check gauge task — real added content (not just a longer
+  // timer), worth bonus score, and reinforces adjacent fire-safety habits.
+  const extinguisherGroup = new THREE.Group();
+  extinguisherGroup.position.set(-ROOM_W/2+0.14, 1.0, -3.4);
+  scene.add(extinguisherGroup);
+  const extMount = new THREE.Mesh(new THREE.BoxGeometry(0.03,0.24,0.18), new THREE.MeshStandardMaterial({color:0x7a1e1e, roughness:0.6}));
+  extinguisherGroup.add(extMount);
+  const extBody = new THREE.Mesh(new THREE.CylinderGeometry(0.065,0.075,0.34,14), new THREE.MeshStandardMaterial({color:0xd23c3c, roughness:0.4, metalness:0.15}));
+  extBody.position.set(0.11, 0, 0);
+  extinguisherGroup.add(extBody);
+  const extCap = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.05,14), new THREE.MeshStandardMaterial({color:0x2b2b2b, metalness:0.5}));
+  extCap.position.set(0.11, 0.195, 0);
+  extinguisherGroup.add(extCap);
+  const extHandle = new THREE.Mesh(new THREE.TorusGeometry(0.045,0.008,8,12,Math.PI), new THREE.MeshStandardMaterial({color:0x2b2b2b, metalness:0.5}));
+  extHandle.rotation.z = Math.PI;
+  extHandle.position.set(0.11, 0.24, 0);
+  extinguisherGroup.add(extHandle);
+  const extHoseMat = new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.7});
+  const extHose = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.22,8), extHoseMat);
+  extHose.rotation.z = Math.PI/5;
+  extHose.position.set(0.2, -0.05, 0);
+  extinguisherGroup.add(extHose);
+  // Gauge — the actual "instrument" the player is checking
+  const extGaugeFace = new THREE.Mesh(new THREE.CircleGeometry(0.028,20), new THREE.MeshStandardMaterial({color:0xf2f0e8, roughness:0.3}));
+  extGaugeFace.rotation.y = Math.PI/2;
+  extGaugeFace.position.set(0.185, 0.12, 0);
+  extinguisherGroup.add(extGaugeFace);
+  const extGaugeNeedle = new THREE.Mesh(new THREE.BoxGeometry(0.001,0.02,0.003), new THREE.MeshStandardMaterial({color:0x2b2b2b}));
+  extGaugeNeedle.position.set(0.187, 0.128, 0.006);
+  extGaugeNeedle.rotation.x = 0.5;
+  extinguisherGroup.add(extGaugeNeedle);
+  const extLabelCanvas = document.createElement('canvas');
+  extLabelCanvas.width = 64; extLabelCanvas.height = 96;
+  const elctx = extLabelCanvas.getContext('2d');
+  elctx.fillStyle = '#ffffff'; elctx.fillRect(0,0,64,96);
+  elctx.fillStyle = '#c0392b'; elctx.font = 'bold 15px sans-serif'; elctx.textAlign = 'center';
+  elctx.fillText('소화기', 32, 24);
+  elctx.fillText('ABC', 32, 44);
+  elctx.strokeStyle = '#c0392b'; elctx.lineWidth = 3; elctx.strokeRect(4,4,56,88);
+  const extLabelTex = new THREE.CanvasTexture(extLabelCanvas);
+  const extLabel = new THREE.Mesh(new THREE.PlaneGeometry(0.09,0.14), new THREE.MeshStandardMaterial({map:extLabelTex}));
+  extLabel.rotation.y = Math.PI/2;
+  extLabel.position.set(0.176, -0.03, 0);
+  extinguisherGroup.add(extLabel);
+
+  interactables.push({
+    mesh: extinguisherGroup, id:'extinguisher', range:1.6,
+    promptText:'평상시 점검: 소화기 압력 게이지 확인',
+    // 누출이 의심되는 실내에서 보너스 점수를 위해 이동시키지 않는다.
+    enabledCheck: ()=> false,
+    onInteract: ()=>{} // resolved by holding the mouse down on it (finishExtinguisherCheck)
+  });
+  let extProgress = 0;
+  function finishExtinguisherCheck(){
+    holdingId = null;
+    extProgress = 0;
+    gameState.extinguisherChecked = true;
+    extGaugeFace.material.color.setHex(0xbdf2c8);
+    gameState.score += 50;
+    document.getElementById('score-val').textContent = gameState.score;
+    showToast('소화기 압력 정상 확인! (+50점)');
+  }
+  function cancelExtinguisherCheck(){
+    holdingId = null;
+    extProgress = 0;
+  }
+  function updateExtinguisherVisual(dt){
+    extProgress += dt;
+    const t = Math.min(1, extProgress / 1.3);
+    const promptEl = document.getElementById('interact-prompt');
+    promptEl.classList.add('show');
+    setGestureHint('hold', t);
+    document.getElementById('interact-text').textContent = `게이지 점검 중... ${Math.round(t*100)}%`;
+    extGaugeNeedle.rotation.x = 0.5 - t*1.1;
+    if(t >= 1) finishExtinguisherCheck();
+  }
+
+  /* ============ GAS DETECTOR ============ */
+  const dockPos = new THREE.Vector3(0.9, 1.55, -ROOM_D/2+0.14);
+  const dockBracket = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.06,0.06), new THREE.MeshStandardMaterial({color:0x3a4552, metalness:0.5, roughness:0.4}));
+  dockBracket.position.copy(dockPos).add(new THREE.Vector3(0,-0.05,0.03));
+  scene.add(dockBracket);
+
+  const detectorGroup = new THREE.Group();
+  const detBody = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.2,0.05), new THREE.MeshStandardMaterial({color:0xf2c94c, metalness:0.4, roughness:0.4}));
+  detectorGroup.add(detBody);
+  const detScreen = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.01), new THREE.MeshStandardMaterial({color:0x111111, emissive:0x113322}));
+  detScreen.position.set(0,0.02,0.03);
+  detectorGroup.add(detScreen);
+  const detAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.005,0.005,0.09,6), new THREE.MeshStandardMaterial({color:0x555555}));
+  detAntenna.position.set(0,0.14,0);
+  detectorGroup.add(detAntenna);
+  const ledColors = [0x27ae60, 0xf2c94c, 0xe74c3c];
+  ledColors.forEach((c,i)=>{
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.008,8,8), new THREE.MeshBasicMaterial({color:c}));
+    led.position.set(-0.04+i*0.04, -0.075, 0.03);
+    detectorGroup.add(led);
+  });
+  detectorGroup.position.copy(dockPos);
+  detectorGroup.rotation.y = 0.15;
+  scene.add(detectorGroup);
+  interactables.push({
+    mesh: detectorGroup, id:'detector', range:1.6,
+    promptText:'평상시 점검 장비',
+    // 탐지기 사용은 자격·장비 조건을 갖춘 점검 상황으로 분리한다.
+    enabledCheck: ()=> false,
+    onInteract: ()=>{
+      gameState.hasDetector = true;
+      detectorGroup.visible = false;
+      showToast('탐지기를 획득했습니다. 방 안을 돌아다니며 누출 지점을 찾으세요.');
+    }
+  });
+
+  /* ============ MAIN GAS VALVE / METER BOX ============ */
+  const mainValveGroup = new THREE.Group();
+  const mvBox = new THREE.Mesh(roundedBoxGeometry(0.46,0.6,0.16,0.02), new THREE.MeshStandardMaterial({color:0xf0c23a, roughness:0.45, metalness:0.35}));
+  mainValveGroup.add(mvBox);
+
+  const dialCanvas = document.createElement('canvas');
+  dialCanvas.width = 160; dialCanvas.height = 160;
+  const dctx = dialCanvas.getContext('2d');
+  dctx.fillStyle = '#eef0ec'; dctx.fillRect(0,0,160,160);
+  dctx.strokeStyle = '#222'; dctx.lineWidth = 3; dctx.beginPath(); dctx.arc(80,80,60,0,Math.PI*2); dctx.stroke();
+  dctx.fillStyle = '#222'; dctx.font='bold 13px sans-serif'; dctx.textAlign='center';
+  dctx.fillText('도시가스', 80, 40);
+  dctx.font='11px sans-serif'; dctx.fillText('m³', 80, 90);
+  for(let i=0;i<12;i++){
+    const a = (i/12)*Math.PI*2;
+    dctx.beginPath();
+    dctx.moveTo(80+Math.cos(a)*52, 80+Math.sin(a)*52);
+    dctx.lineTo(80+Math.cos(a)*58, 80+Math.sin(a)*58);
+    dctx.stroke();
+  }
+  dctx.strokeStyle = '#c0392b'; dctx.lineWidth=2;
+  dctx.beginPath(); dctx.moveTo(80,80); dctx.lineTo(80+Math.cos(-1.1)*40, 80+Math.sin(-1.1)*40); dctx.stroke();
+  const dialTex = new THREE.CanvasTexture(dialCanvas);
+  const dial = new THREE.Mesh(new THREE.CircleGeometry(0.13,32), new THREE.MeshStandardMaterial({map:dialTex, roughness:0.3}));
+  dial.position.set(-0.08, 0.12, 0.081);
+  mainValveGroup.add(dial);
+
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 160; labelCanvas.height = 60;
+  const lctx = labelCanvas.getContext('2d');
+  lctx.fillStyle = '#c0392b'; lctx.fillRect(0,0,160,60);
+  lctx.fillStyle = '#fff'; lctx.font='bold 16px sans-serif'; lctx.textAlign='center';
+  lctx.fillText('위험 · 도시가스', 80, 26);
+  lctx.font = '11px sans-serif';
+  lctx.fillText('임의 조작 금지', 80, 46);
+  const labelTex = new THREE.CanvasTexture(labelCanvas);
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.34,0.13), new THREE.MeshStandardMaterial({map:labelTex}));
+  label.position.set(0.06, -0.14, 0.081);
+  mainValveGroup.add(label);
+
+  // Real ball-valve shutoff instead of a plain rectangular bar: a compact
+  // valve body between the pipe and the lever, and a rounded, tapered
+  // handle (using the same rounded-geometry helper as the furniture) so it
+  // actually reads as hardware rather than a placeholder block.
+  const valveBody = new THREE.Mesh(new THREE.CylinderGeometry(0.038,0.038,0.05,16), new THREE.MeshStandardMaterial({color:0x8a8f98, metalness:0.6, roughness:0.35}));
+  valveBody.rotation.z = Math.PI/2;
+  valveBody.position.set(0.14, 0.12, 0.1);
+  mainValveGroup.add(valveBody);
+  const mvHandle = new THREE.Mesh(roundedBoxGeometry(0.24,0.05,0.05,0.022), new THREE.MeshStandardMaterial({color:0xe74c3c, metalness:0.35, roughness:0.3}));
+  mvHandle.position.set(0.14, 0.12, 0.125);
+  mvHandle.name = "mvHandle";
+  mainValveGroup.add(mvHandle);
+  const mvStem = new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.016,0.03,10), new THREE.MeshStandardMaterial({color:0x555555, metalness:0.6}));
+  mvStem.rotation.x = Math.PI/2;
+  mvStem.position.set(0.14, 0.12, 0.1);
+  mainValveGroup.add(mvStem);
+
+  const mvPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,1.0,10), new THREE.MeshStandardMaterial({color:0xf0c23a, metalness:0.3, roughness:0.5}));
+  mvPipe.position.set(0.14,-0.75,0.09);
+  mainValveGroup.add(mvPipe);
+
+  mainValveGroup.position.set(ROOM_W/2 - 0.09, 1.3, 1.6);
+  mainValveGroup.rotation.y = -Math.PI/2;
+  scene.add(mainValveGroup);
+  interactables.push({
+    mesh: mainValveGroup, id:'mainValve', range:1.8,
+    promptText:'마우스를 누른 채 동그랗게 돌려서 잠그기',
+    enabledCheck: ()=> gameState.mission===1 && !gameState.mainValveOff,
+    onInteract: ()=>{} // resolved via the drag-turn gesture (finishMainValveTurn)
+  });
+  function finishMainValveTurn(){
+    turningId = null;
+    turnAngleAccum = 0;
+    mvHandle.rotation.x = Math.PI/2;
+    mvHandle.material.color.setHex(0x27ae60);
+    completeMission(1, '메인 가스밸브를 잠갔습니다.');
+    gameState.mainValveOff = true;
+    showInfoCard('다음은 자연 환기입니다', '밸브에 안전하게 접근할 수 있을 때만 잠그세요. 이제 전등·환풍기·콘센트는 만지지 말고, 문과 창문을 열어 자연 환기한 뒤 대피해야 합니다. 밸브가 위험한 위치라면 차단을 시도하지 말고 바로 대피하세요.');
+  }
+  function updateMainValveTurnVisual(){
+    const t = Math.min(1, turnAngleAccum / VALVE_TURN_TARGET);
+    mvHandle.rotation.x = t * Math.PI/2;
+    const promptEl = document.getElementById('interact-prompt');
+    promptEl.classList.add('show');
+    setGestureHint('turn', t);
+    document.getElementById('interact-text').textContent = `잠그는 중... ${Math.round(t*100)}%`;
+    if(t >= 1) finishMainValveTurn();
+  }
+
+  const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.13,0.28,12,1,true), new THREE.MeshStandardMaterial({color:0x3d6b8a, side:THREE.DoubleSide, roughness:0.8}));
+  basket.position.set(2.65, 0.14, 1.55);
+  scene.add(basket);
+  addSolid(2.65, 1.55, 0.32, 0.32);
+  const mopStick = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,1.1,8), new THREE.MeshStandardMaterial({color:0x8a6a45}));
+  mopStick.position.set(2.05, 0.6, 0.45);
+  mopStick.rotation.z = 0.15;
+  scene.add(mopStick);
+
+  /* ============ LIGHT SWITCH (safety-lesson trap object) ============ */
+  // Was two separate boxes (a plate + a slightly tilted toggle box floating
+  // just in front of it) — from an angle that combination kept reading as
+  // "two disconnected flaps sticking out of the wall", which is the same
+  // stray-panel bug reported several times now. Replaced with one single
+  // flush plate mesh with the toggle switch painted on as a texture — there
+  // is no second piece of geometry left that can look detached.
+  const switchCanvas = document.createElement('canvas');
+  switchCanvas.width = 96; switchCanvas.height = 148;
+  const swctx = switchCanvas.getContext('2d');
+  swctx.fillStyle = '#ece9e2'; swctx.fillRect(0,0,96,148);
+  swctx.strokeStyle = 'rgba(0,0,0,0.12)'; swctx.lineWidth = 3;
+  swctx.strokeRect(3,3,90,142);
+  swctx.fillStyle = '#f8f7f3';
+  swctx.fillRect(30,44,36,60);
+  swctx.strokeStyle = 'rgba(0,0,0,0.2)'; swctx.lineWidth = 2;
+  swctx.strokeRect(30,44,36,60);
+  swctx.fillStyle = 'rgba(0,0,0,0.15)';
+  swctx.fillRect(34,50,28,8);
+  const switchTex = new THREE.CanvasTexture(switchCanvas);
+  const switchGroup = new THREE.Group();
+  switchGroup.position.set(ROOM_W/2-0.075, 1.25, 0.6);
+  switchGroup.rotation.y = -Math.PI/2;
+  scene.add(switchGroup);
+  const switchPlate = new THREE.Mesh(new THREE.PlaneGeometry(0.075,0.115), new THREE.MeshStandardMaterial({map:switchTex, roughness:0.85}));
+  switchGroup.add(switchPlate);
+  interactables.push({
+    mesh: switchGroup, id:'lightSwitch', range:1.4,
+    promptText: '전등 스위치',
+    enabledCheck: ()=> true,
+    onInteract: ()=>{
+      // 냄새를 인지한 시점부터 실내 전기 스위치 조작은 위험하다. 누출을
+      // "찾은 뒤"부터만 위험하다고 가르치지 않도록, 대피 전에는 즉시 실패
+      // 처리하고 이유를 명확히 알려 준다.
+      if(!gameState.evacuated){
+        playExplosion();
+        endGame(false, '가스 냄새가 나는 실내에서 전기 스위치를 조작했습니다. 작은 스파크도 점화원이 될 수 있으므로, 전등·환풍기·콘센트는 켜거나 끄지 말고 자연 환기 후 대피해야 합니다.');
+      } else {
+        showToast('안전지대에서는 신고 안내를 따라주세요.');
+      }
+    }
+  });
+
+  /* ============ WINDOW (ventilation) ============ */
+  const skyCanvas = document.createElement('canvas');
+  skyCanvas.width = 256; skyCanvas.height = 200;
+  const sctx = skyCanvas.getContext('2d');
+  const grad = sctx.createLinearGradient(0,0,0,200);
+  grad.addColorStop(0,'#0d1b3a'); grad.addColorStop(1,'#1c3355');
+  sctx.fillStyle = grad; sctx.fillRect(0,0,256,200);
+  for(let i=0;i<40;i++){
+    sctx.fillStyle = Math.random()>0.5 ? '#ffe9a8' : '#8fb8ff';
+    sctx.fillRect(Math.random()*256, 90+Math.random()*100, 3+Math.random()*4, 3+Math.random()*4);
+  }
+  const skyTex = new THREE.CanvasTexture(skyCanvas);
+  const skyPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.1,0.95), new THREE.MeshBasicMaterial({map:skyTex}));
+  skyPlane.position.set(2.6, 1.7, -ROOM_D/2-0.3);
+  scene.add(skyPlane);
+  scene.add(makeGlowSprite(0x8fb8ff, 1.3, skyPlane.position, 0.3));
+
+  const windowFrame = new THREE.Mesh(new THREE.BoxGeometry(1.4,1.2,0.08), new THREE.MeshStandardMaterial({color:0x3d4f63, roughness:0.6}));
+  windowFrame.position.set(2.6, 1.7, -ROOM_D/2+0.09);
+  scene.add(windowFrame);
+  const mullionV = new THREE.Mesh(new THREE.BoxGeometry(0.04,1.1,0.06), new THREE.MeshStandardMaterial({color:0x3d4f63}));
+  mullionV.position.set(2.6, 1.7, -ROOM_D/2+0.12);
+  scene.add(mullionV);
+  const mullionH = new THREE.Mesh(new THREE.BoxGeometry(1.15,0.04,0.06), new THREE.MeshStandardMaterial({color:0x3d4f63}));
+  mullionH.position.set(2.6, 1.7, -ROOM_D/2+0.12);
+  scene.add(mullionH);
+  const windowGlass = new THREE.Mesh(new THREE.BoxGeometry(1.2,1.0,0.03), new THREE.MeshStandardMaterial({color:0x9fd6ff, transparent:true, opacity:0.35, emissive:0x0d2233}));
+  windowGlass.position.set(2.6, 1.7, -ROOM_D/2+0.12);
+  windowGlass.name="windowGlass";
+  scene.add(windowGlass);
+  // Frame opening spans y 1.1–2.3 (height 1.2, centered on 1.7). The window
+  // now shrinks upward into that header as it "opens" (like a sash window
+  // sliding up), instead of translating the full-height pane straight up —
+  // that previous version pushed the pane's top edge past the frame AND
+  // through the ceiling once fully open.
+  const WINDOW_FRAME_TOP = 2.2, WINDOW_GLASS_H = 1.0, WINDOW_MIN_SCALE = 0.12;
+  function windowYForScale(s){ return WINDOW_FRAME_TOP - (WINDOW_GLASS_H*s)/2; }
+  interactables.push({
+    mesh: windowGlass, id:'window', range:2.2,
+    promptText:'마우스를 누른 채 위로 쓸어올려서 열기',
+    enabledCheck: ()=> gameState.mission===2 && !gameState.windowOpen,
+    onInteract: ()=>{} // resolved via the drag-up gesture (finishWindowOpen)
+  });
+  function finishWindowOpen(){
+    draggingWindow = false;
+    windowDragProgress = 0;
+    gameState.windowOpen = true;
+    windowGlass.scale.y = WINDOW_MIN_SCALE;
+    windowGlass.position.y = windowYForScale(WINDOW_MIN_SCALE);
+    windowGlass.material.opacity = 0.16; // reads as "open" — mostly see-through gap
+    checkMission2Complete();
+  }
+  function updateWindowDragVisual(){
+    const t = Math.min(1, windowDragProgress);
+    const s = 1 - t*(1-WINDOW_MIN_SCALE);
+    windowGlass.scale.y = s;
+    windowGlass.position.y = windowYForScale(s);
+    windowGlass.material.opacity = 0.35 - t*0.19;
+    const promptEl = document.getElementById('interact-prompt');
+    promptEl.classList.add('show');
+    setGestureHint('dragUp', t);
+    document.getElementById('interact-text').textContent = `여는 중... ${Math.round(t*100)}%`;
+    if(t >= 1) finishWindowOpen();
+  }
+
+  /* Dead decoration (a "?" sign post that had no interaction wired to it —
+     the quiz actually opens automatically after mission 2) has been removed. */
+
+  const diningTable = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.06,24), woodMaterial(0x7a5a3a, 0x4a3018, 3, 1, {roughness:0.45}));
+  diningTable.position.set(0.2, 0.75, -1.0);
+  scene.add(diningTable);
+  addContactShadow(0.2, -1.0, 0.7, 0.7, 0.55);
+  const diningLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.75,12), woodMaterial(0x3d2e1e, 0x1f150c, 1, 3, {roughness:0.55}));
+  diningLeg.position.set(0.2, 0.375, -1.0);
+  scene.add(diningLeg);
+  addSolid(0.2, -1.0, 1.1, 1.1);
+
+  // The dining table used to be a bare disc floating on one leg with
+  // nothing around it — the single "emptiest" spot in the house. Four
+  // simple chairs ground it as an actual dining set, and a fruit bowl +
+  // two placemats give the tabletop something to look at.
+  const chairSeatMat = woodMaterial(0x5c4028, 0x2c1a10, 1, 1, {roughness:0.55});
+  const chairLegMat = new THREE.MeshStandardMaterial({color:0x2b2320, roughness:0.5});
+  [[0.88,-1.0],[-0.48,-1.0],[0.2,-1.68],[0.2,-0.32]].forEach(([cx,cz], i)=>{
+    const chair = new THREE.Group();
+    const seat = new THREE.Mesh(roundedBoxGeometry(0.34,0.04,0.34,0.02), chairSeatMat);
+    seat.position.y = 0.46;
+    chair.add(seat);
+    // chair.lookAt(table center) below already orients the whole group so
+    // its local -Z axis faces the table — the back rest just needs to sit
+    // on the opposite (+Z) side in LOCAL space, with no rotation of its own.
+    // (Previously the back was pre-rotated toward the table AND the whole
+    // group was rotated again via lookAt, doubling the angle and leaving
+    // the backrest visibly crooked relative to the seat.)
+    const back = new THREE.Mesh(roundedBoxGeometry(0.34,0.42,0.04,0.02), chairSeatMat);
+    back.position.set(0, 0.67, -0.15);
+    chair.add(back);
+    [[0.13,0.13],[-0.13,0.13],[0.13,-0.13],[-0.13,-0.13]].forEach(([lx,lz])=>{
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.46,8), chairLegMat);
+      leg.position.set(lx,0.23,lz);
+      chair.add(leg);
+    });
+    chair.position.set(cx,0,cz);
+    chair.lookAt(0.2, 0, -1.0);
+    scene.add(chair);
+    addContactShadow(cx, cz, 0.32, 0.32, 0.4);
+  });
+  // Set the table for an actual meal. The old three tiny dots were easy to
+  // miss, so the surface still looked empty. The larger fruit bowl, plates,
+  // glasses, and napkins give it a clear purpose from normal play distance.
+  [[0.2,-1.35],[0.2,-0.65]].forEach(([px,pz], i)=>{
+    const mat = new THREE.Mesh(new THREE.CircleGeometry(0.18,24), new THREE.MeshStandardMaterial({color:i ? 0xd6c9a8 : 0xc6b28b, roughness:0.95}));
+    mat.rotation.x = -Math.PI/2;
+    mat.position.set(px, 0.786, pz);
+    scene.add(mat);
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.128,0.128,0.012,28), new THREE.MeshStandardMaterial({color:0xf8f6f0, roughness:0.28, metalness:0.04}));
+    plate.position.set(px, 0.798, pz);
+    scene.add(plate);
+    const plateWell = new THREE.Mesh(new THREE.TorusGeometry(0.085,0.006,8,24), new THREE.MeshStandardMaterial({color:0xd5d9dc, roughness:0.32}));
+    plateWell.rotation.x = Math.PI/2;
+    plateWell.position.set(px, 0.807, pz);
+    scene.add(plateWell);
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.037,0.095,16,1,true), new THREE.MeshStandardMaterial({color:0xbfe3ee, transparent:true, opacity:0.48, roughness:0.08, metalness:0.08, side:THREE.DoubleSide}));
+    glass.position.set(px+(i ? -0.12 : 0.12), 0.84, pz+(i ? 0.02 : -0.02));
+    scene.add(glass);
+  });
+
+  const fruitBowlGroup = new THREE.Group();
+  fruitBowlGroup.position.set(0.2, 0.79, -1.0);
+  const fruitBowlMat = new THREE.MeshStandardMaterial({color:0xf4f1e9, roughness:0.25, metalness:0.04, side:THREE.DoubleSide});
+  const fruitBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.175,0.12,0.078,32,1,true), fruitBowlMat);
+  fruitBowl.position.y = 0.039;
+  fruitBowlGroup.add(fruitBowl);
+  const bowlFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.108,0.018,28), fruitBowlMat);
+  bowlFoot.position.y = 0.009;
+  fruitBowlGroup.add(bowlFoot);
+  const bowlRim = new THREE.Mesh(new THREE.TorusGeometry(0.175,0.009,10,32), new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.22}));
+  bowlRim.rotation.x = Math.PI/2;
+  bowlRim.position.y = 0.078;
+  fruitBowlGroup.add(bowlRim);
+
+  // CC0 source image (Wikimedia Commons) adds real fruit colour/texture in
+  // the bowl. The solid fruit models below remain the fallback, so the scene
+  // is still complete if a player is offline.
+  const fruitReferenceTexture = new THREE.TextureLoader().load(
+    'https://commons.wikimedia.org/wiki/Special:FilePath/Fruits_in_bowl_oranges_lime_apples_(1).jpg?width=640',
+    tex => { tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); }
+  );
+  const fruitReference = new THREE.Mesh(new THREE.CircleGeometry(0.15,32), new THREE.MeshBasicMaterial({map:fruitReferenceTexture, transparent:true, opacity:0.58, depthWrite:false}));
+  fruitReference.rotation.x = -Math.PI/2;
+  fruitReference.position.y = 0.082;
+  fruitBowlGroup.add(fruitReference);
+
+  function addApple(x,y,z,color){
+    const apple = new THREE.Mesh(new THREE.SphereGeometry(0.052,16,14), new THREE.MeshStandardMaterial({color, roughness:0.48}));
+    apple.scale.y = 0.9; apple.position.set(x,y,z); fruitBowlGroup.add(apple);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.004,0.005,0.026,6), new THREE.MeshStandardMaterial({color:0x5a3a22, roughness:0.8}));
+    stem.position.set(x, y+0.052, z); stem.rotation.z=0.16; fruitBowlGroup.add(stem);
+  }
+  addApple(-0.055,0.125,-0.012,0xc63f32);
+  addApple(0.045,0.125,0.02,0x80a645);
+  const orange = new THREE.Mesh(new THREE.SphereGeometry(0.047,16,14), new THREE.MeshStandardMaterial({color:0xf18d2c, roughness:0.7}));
+  orange.position.set(0.005,0.118,-0.052); fruitBowlGroup.add(orange);
+  const pearBase = new THREE.Mesh(new THREE.SphereGeometry(0.047,16,14), new THREE.MeshStandardMaterial({color:0xd8d25a, roughness:0.58}));
+  pearBase.position.set(0.07,0.115,-0.032); fruitBowlGroup.add(pearBase);
+  const pearTop = new THREE.Mesh(new THREE.SphereGeometry(0.026,14,12), pearBase.material);
+  pearTop.position.set(0.07,0.157,-0.032); fruitBowlGroup.add(pearTop);
+  const banana = new THREE.Mesh(new THREE.TorusGeometry(0.073,0.011,8,18,Math.PI*0.82), new THREE.MeshStandardMaterial({color:0xf0ca4f, roughness:0.68}));
+  banana.rotation.x = Math.PI/2; banana.rotation.z = -1.15; banana.position.set(-0.006,0.132,0.045); fruitBowlGroup.add(banana);
+  [[-0.085,0.062],[-0.058,0.075],[-0.03,0.06],[-0.04,0.095],[-0.075,0.098]].forEach(([gx,gz])=>{
+    const grape = new THREE.Mesh(new THREE.SphereGeometry(0.017,10,10), new THREE.MeshStandardMaterial({color:0x6d4c8b, roughness:0.4}));
+    grape.position.set(gx,0.115,gz); fruitBowlGroup.add(grape);
+  });
+  scene.add(fruitBowlGroup);
+
+  /* ============ GAS ALARM ============ */
+  const gasAlarm = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.05,16), new THREE.MeshStandardMaterial({color:0xffffff, emissive:0x220000}));
+  gasAlarm.rotation.x = Math.PI/2;
+  gasAlarm.position.set(-1, ROOM_H-0.05, -3.0);
+  scene.add(gasAlarm);
+  const alarmLight = new THREE.PointLight(0xff2222, 0, 4);
+  alarmLight.position.copy(gasAlarm.position);
+  scene.add(alarmLight);
+
+  /* ============ EXIT DOOR + CALL PANEL ============ */
+  const doorFrame = new THREE.Mesh(roundedBoxGeometry(1.3,2.1,0.1,0.02), woodMaterial(0x6b4a30, 0x3d2717, 1, 2.5, {roughness:0.65}));
+  doorFrame.position.set(DOOR_X, 1.05, ROOM_D/2-0.05);
+  scene.add(doorFrame);
+  const exitSign = new THREE.Mesh(new THREE.PlaneGeometry(0.4,0.15), new THREE.MeshStandardMaterial({color:0x1a8f3c, emissive:0x0d5c22}));
+  exitSign.position.set(DOOR_X, 2.25, ROOM_D/2-0.02);
+  scene.add(exitSign);
+
+  const callPanel = new THREE.Group();
+  // Wall-mounted emergency call panel: a labeled face (phone icon + "119
+  // 긴급신고" text) on a canvas texture, plus a large red call button below —
+  // was previously a blank white square with a tiny red dot, which read as
+  // an unlabeled box rather than a phone.
+  const callCanvas = document.createElement('canvas');
+  callCanvas.width = 256; callCanvas.height = 320;
+  const ctx119 = callCanvas.getContext('2d');
+  ctx119.fillStyle = '#f5f5f5';
+  ctx119.fillRect(0,0,256,320);
+  ctx119.strokeStyle = '#c9c9c9'; ctx119.lineWidth = 6;
+  ctx119.strokeRect(3,3,250,314);
+  // phone handset icon
+  ctx119.strokeStyle = '#1a1a1a'; ctx119.lineWidth = 10; ctx119.lineCap = 'round';
+  ctx119.beginPath();
+  ctx119.moveTo(70,90); ctx119.quadraticCurveTo(60,120,90,150);
+  ctx119.quadraticCurveTo(110,170,130,190);
+  ctx119.quadraticCurveTo(150,210,180,230);
+  ctx119.quadraticCurveTo(210,260,186,268);
+  ctx119.quadraticCurveTo(160,278,120,240);
+  ctx119.quadraticCurveTo(70,190,50,140);
+  ctx119.quadraticCurveTo(30,100,58,80);
+  ctx119.closePath();
+  ctx119.stroke();
+  ctx119.fillStyle = '#e74c3c';
+  ctx119.font = 'bold 46px sans-serif'; ctx119.textAlign = 'center';
+  ctx119.fillText('119', 128, 58);
+  ctx119.fillStyle = '#1a1a1a';
+  ctx119.font = 'bold 24px sans-serif';
+  ctx119.fillText('긴급신고', 128, 300);
+  const callTex = new THREE.CanvasTexture(callCanvas);
+  const callPlate = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.34,0.035), new THREE.MeshStandardMaterial({map:callTex, roughness:0.5}));
+  callPanel.add(callPlate);
+  const callBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.02,20), new THREE.MeshStandardMaterial({color:0xe74c3c, emissive:0x330000}));
+  callBtn.rotation.x = Math.PI/2;
+  callBtn.position.set(0,-0.11,0.022);
+  callPanel.add(callBtn);
+  // 신고 패널은 현관 밖 안전지대에 둔다. 가스 냄새가 나는 실내에서
+  // 휴대전화·전기기기를 조작하게 보이지 않도록 한다.
+  callPanel.position.set(DOOR_X-0.95, 1.4, ROOM_D/2+0.62);
+  scene.add(callPanel);
+  interactables.push({
+    mesh: callPanel, id:'callReport', range:1.6,
+    promptText:'안전지대에서 119에 신고하기',
+    enabledCheck: ()=> gameState.mission===5 && gameState.evacuated && !gameState.reported,
+    onInteract: ()=>{ openPhoneCall(); }
+  });
+
+  interactables.push({
+    mesh: doorFrame, id:'exitDoor', range:2.0,
+    promptText:'문 밖 안전지대로 대피하기',
+    enabledCheck: ()=> gameState.mission===4 && !gameState.evacuated,
+    onInteract: ()=>{
+      playDoor();
+      gameState.evacuated = true;
+      camera.position.set(DOOR_X, EYE_HEIGHT, ROOM_D/2+0.92);
+      completeMission(4, '안전지대로 대피했습니다. 이제 밖에서 신고하세요.');
+      showInfoCard('안전지대에서 신고하세요', '119에 현재 위치와 가스 냄새·누출 의심 상황을 알리세요. 가스안전공사 또는 공급기관에도 안내받을 수 있지만, 긴급 위험 상황에서는 119 신고가 우선입니다.');
+    }
+  });
+
+  /* ============ OBJECTIVE BEACONS ============ */
+  const beaconHeights = { stoveValve:0.3, window:0.55, mainValve:0.5, exitDoor:1.2, callReport:0.35 };
+  interactables.forEach(it=>{
+    // No beacon for the light switch (it's a trap object, not a mission
+    // target) or the fire extinguisher (an always-available optional bonus —
+    // a permanently glowing marker for it just added visual clutter next to
+    // whatever the *actual* current objective was).
+    if(['lightSwitch','extinguisher','detector','leakPoint'].includes(it.id)) return;
+    const h = beaconHeights[it.id] !== undefined ? beaconHeights[it.id] : 0.6;
+    const bGroup = new THREE.Group();
+    // Beam always starts at the object's own origin (y=0) and reaches just
+    // below the marker — sized relative to h instead of a fixed offset, so
+    // it can never dip below the mount point. The previous fixed offset
+    // assumed a tall h; for shorter objects (like the stove's small lever)
+    // it pushed most of the beam below the surface, leaving only a sliver
+    // poking out that read as a stray cone shape.
+    const beamLen = Math.max(0.15, h - 0.05);
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012,0.012,beamLen,8),
+      new THREE.MeshBasicMaterial({color:0xf2c94c, transparent:true, opacity:0.55})
+    );
+    beam.position.y = beamLen/2;
+    bGroup.add(beam);
+    const marker = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.075),
+      new THREE.MeshBasicMaterial({color:0xf2c94c})
+    );
+    marker.position.y = h;
+    bGroup.add(marker);
+    bGroup.visible = false;
+    // Counter-rotate for objects whose mesh itself is rotated on its side
+    // (the canister lies horizontal now), so the beacon still points
+    // straight up in world space instead of inheriting the parent's tilt.
+    if(it.mesh.rotation.z) bGroup.rotation.z = -it.mesh.rotation.z;
+    it.mesh.add(bGroup);
+    it.beacon = { group: bGroup, marker, beam };
+  });
+
+  function updateBeacons(t){
+    for(const it of interactables){
+      if(!it.beacon) continue;
+      const active = it.enabledCheck ? it.enabledCheck() : true;
+      const visibleObj = it.mesh.visible !== false;
+      it.beacon.group.visible = active && visibleObj;
+      if(active){
+        it.beacon.marker.rotation.y = t*0.002;
+        it.beacon.marker.position.y = (beaconHeights[it.id] ?? 0.6) + Math.sin(t*0.003)*0.05;
+        it.beacon.beam.material.opacity = 0.4 + Math.sin(t*0.006)*0.2;
+      }
+    }
+  }
+
+  const fridge = new THREE.Mesh(roundedBoxGeometry(0.7,1.8,0.65,0.035), new THREE.MeshStandardMaterial({color:0xd9dde2, metalness:0.4, roughness:0.35}));
+  fridge.position.set(3.85, 0.9, -ROOM_D/2+0.4);
+  scene.add(fridge);
+  addContactShadow(3.85, -ROOM_D/2+0.4, 0.55, 0.5, 0.65);
+  const fridgeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.5,10), new THREE.MeshStandardMaterial({color:0x888888, metalness:0.8, roughness:0.2}));
+  fridgeHandle.position.set(3.5, 1.0, -ROOM_D/2+0.75);
+  scene.add(fridgeHandle);
+  const fridgeSeam = new THREE.Mesh(new THREE.BoxGeometry(0.72,0.02,0.66), new THREE.MeshStandardMaterial({color:0xb8bcc2}));
+  fridgeSeam.position.set(3.85, 1.15, -ROOM_D/2+0.4);
+  scene.add(fridgeSeam);
+  addSolid(3.85, -ROOM_D/2+0.4, 0.7, 0.65);
+
+  /* ============ SET DRESSING ============ */
+  const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.32,0.3,4), new THREE.MeshStandardMaterial({color:0xb9bfc7, metalness:0.7, roughness:0.3}));
+  hood.rotation.y = Math.PI/4;
+  hood.position.set(-2.4, 2.35, -ROOM_D/2+0.5);
+  scene.add(hood);
+  const hoodPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.5,12), new THREE.MeshStandardMaterial({color:0xb9bfc7, metalness:0.6, roughness:0.35}));
+  hoodPipe.position.set(-2.4, 2.75, -ROOM_D/2+0.5);
+  scene.add(hoodPipe);
+
+  const clockCanvas = document.createElement('canvas');
+  clockCanvas.width=128; clockCanvas.height=128;
+  const clkctx = clockCanvas.getContext('2d');
+  clkctx.fillStyle='#f5f2e8'; clkctx.beginPath(); clkctx.arc(64,64,60,0,Math.PI*2); clkctx.fill();
+  clkctx.strokeStyle='#2b2b2b'; clkctx.lineWidth=4; clkctx.stroke();
+  clkctx.fillStyle='#2b2b2b';
+  for(let i=0;i<12;i++){ const a=(i/12)*Math.PI*2; clkctx.beginPath(); clkctx.arc(64+Math.cos(a)*50,64+Math.sin(a)*50,3,0,Math.PI*2); clkctx.fill(); }
+  clkctx.lineWidth=3; clkctx.beginPath(); clkctx.moveTo(64,64); clkctx.lineTo(64+Math.cos(-1.4)*32,64+Math.sin(-1.4)*32); clkctx.stroke();
+  clkctx.lineWidth=2; clkctx.beginPath(); clkctx.moveTo(64,64); clkctx.lineTo(64+Math.cos(0.6)*42,64+Math.sin(0.6)*42); clkctx.stroke();
+  const clockTex = new THREE.CanvasTexture(clockCanvas);
+  const wallClock = new THREE.Mesh(new THREE.CircleGeometry(0.16,32), new THREE.MeshStandardMaterial({map:clockTex, roughness:0.5}));
+  wallClock.position.set(1.2, 2.15, -ROOM_D/2+0.09);
+  scene.add(wallClock);
+
+  const dishRackBase = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.02,0.22), new THREE.MeshStandardMaterial({color:0xcfd6dc, metalness:0.6, roughness:0.3}));
+  dishRackBase.position.set(0.05, 0.925, -ROOM_D/2+0.45);
+  scene.add(dishRackBase);
+  for(let i=0;i<3;i++){
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.01,20), new THREE.MeshStandardMaterial({color:0xf3f3f0, roughness:0.3}));
+    plate.rotation.z = Math.PI/2;
+    plate.position.set(0.05-0.08+i*0.08, 1.0, -ROOM_D/2+0.45);
+    scene.add(plate);
+  }
+  const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.03,0.06,12), new THREE.MeshStandardMaterial({color:0x4a90c2, roughness:0.4}));
+  mug.position.set(0.25, 0.955, -ROOM_D/2+0.5);
+  scene.add(mug);
+
+  // A kettle sitting on the counter with a lazy curl of steam — pure
+  // atmosphere/realism prop (nothing gameplay-critical touches it), placed
+  // in the gap between the stove and the dish rack so the counter doesn't
+  // read as sparsely dressed.
+  const kettleGroup = new THREE.Group();
+  const kettleMat = new THREE.MeshStandardMaterial({color:0xc7cdd3, metalness:0.75, roughness:0.25});
+  const kettleBody = new THREE.Mesh(new THREE.SphereGeometry(0.085,16,12), kettleMat);
+  kettleBody.scale.set(1,0.8,1);
+  kettleGroup.add(kettleBody);
+  const kettleNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.032,0.03,12), kettleMat);
+  kettleNeck.position.y = 0.058;
+  kettleGroup.add(kettleNeck);
+  const kettleLid = new THREE.Mesh(new THREE.SphereGeometry(0.026,12,8,0,Math.PI*2,0,Math.PI/2), kettleMat);
+  kettleLid.position.y = 0.072;
+  kettleGroup.add(kettleLid);
+  const kettleKnob = new THREE.Mesh(new THREE.SphereGeometry(0.008,8,8), new THREE.MeshStandardMaterial({color:0x2b2b2b}));
+  kettleKnob.position.y = 0.095;
+  kettleGroup.add(kettleKnob);
+  const kettleSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.02,0.09,10), kettleMat);
+  kettleSpout.position.set(0.08,0.02,0);
+  kettleSpout.rotation.z = -Math.PI/2.6;
+  kettleGroup.add(kettleSpout);
+  const kettleHandle = new THREE.Mesh(new THREE.TorusGeometry(0.045,0.008,8,14,Math.PI*1.3), new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.6}));
+  kettleHandle.position.set(-0.06,0.06,0);
+  kettleHandle.rotation.set(0,0,Math.PI/2.2);
+  kettleGroup.add(kettleHandle);
+  kettleGroup.position.set(-0.65, 0.94, -ROOM_D/2+0.42);
+  scene.add(kettleGroup);
+
+  const kettleSteam = [];
+  for(let i=0;i<5;i++){
+    const sMat = new THREE.SpriteMaterial({map:smokeTex, color:0xffffff, transparent:true, opacity:0, depthWrite:false});
+    const sp = new THREE.Sprite(sMat);
+    sp.scale.set(0.09,0.09,1);
+    sp.position.copy(kettleGroup.position).add(new THREE.Vector3(0.08,0.11+i*0.01,0));
+    scene.add(sp);
+    kettleSteam.push({mesh:sp, offset:Math.random()*10});
+  }
+
+  // A small wooden cutting board with a couple of chopped vegetable
+  // pieces — cheap primitives, but this kind of "someone was just cooking
+  // here" clutter is what makes a kitchen counter feel lived-in instead of
+  // showroom-empty.
+  const boardMat = new THREE.MeshStandardMaterial({color:0xc9a15e, roughness:0.7});
+  const cuttingBoard = new THREE.Mesh(roundedBoxGeometry(0.32,0.02,0.2,0.02,0.01), boardMat);
+  cuttingBoard.position.set(-1.85, 0.91, -ROOM_D/2+0.42);
+  cuttingBoard.rotation.y = 0.1;
+  scene.add(cuttingBoard);
+  const veggieMat1 = new THREE.MeshStandardMaterial({color:0xd8543a, roughness:0.55});
+  const veggieMat2 = new THREE.MeshStandardMaterial({color:0x6fae4a, roughness:0.6});
+  for(let i=0;i<4;i++){
+    const slice = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.012,10), i%2? veggieMat1:veggieMat2);
+    slice.position.set(-1.9 + i*0.035, 0.925, -ROOM_D/2+0.4 + (i%2)*0.03);
+    slice.rotation.x = Math.PI/2;
+    scene.add(slice);
+  }
+  const knife = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.006,0.022), new THREE.MeshStandardMaterial({color:0xd9dde2, metalness:0.8, roughness:0.15}));
+  knife.position.set(-1.78, 0.925, -ROOM_D/2+0.36);
+  knife.rotation.y = 0.5;
+  scene.add(knife);
+
+  const curtainMat = new THREE.MeshStandardMaterial({color:0xb85c5c, roughness:0.85, side:THREE.DoubleSide});
+  [1.85, 3.15].forEach(cx=>{
+    const curtain = new THREE.Mesh(new THREE.PlaneGeometry(0.32,1.3), curtainMat);
+    curtain.position.set(cx, 1.65, -ROOM_D/2+0.2);
+    scene.add(curtain);
+  });
+
+  const bedFrame = new THREE.Mesh(roundedBoxGeometry(1.3,0.28,2.0,0.03), woodMaterial(0x4a3626, 0x28180d, 2, 2.5, {roughness:0.6}));
+  bedFrame.position.set(-3.6, 0.14, -0.4);
+  scene.add(bedFrame);
+  addContactShadow(-3.6, -0.4, 1.0, 1.6, 0.6);
+  addSolid(-3.6, -0.4, 1.3, 2.0);
+  const mattress = new THREE.Mesh(roundedBoxGeometry(1.22,0.18,1.9,0.05,0.03), new THREE.MeshStandardMaterial({color:0xf2ede1, roughness:0.85}));
+  mattress.position.set(-3.6, 0.37, -0.4);
+  scene.add(mattress);
+  const blanket = new THREE.Mesh(roundedBoxGeometry(1.24,0.09,1.15,0.06,0.03), new THREE.MeshStandardMaterial({color:0x5c7fa8, roughness:0.9}));
+  blanket.position.set(-3.6, 0.5, 0.05);
+  blanket.rotation.z = 0.015; // a touch of asymmetry so it doesn't look laser-cut
+  scene.add(blanket);
+  // A second, smaller fold on top of the blanket — breaks up the flat top
+  // face which is the single biggest tell of "it's just a box" from this
+  // camera height.
+  const blanketFold = new THREE.Mesh(roundedBoxGeometry(1.1,0.05,0.35,0.04,0.02), new THREE.MeshStandardMaterial({color:0x4d6f96, roughness:0.9}));
+  blanketFold.position.set(-3.55, 0.555, 0.35);
+  blanketFold.rotation.z = -0.03;
+  scene.add(blanketFold);
+  const pillow = new THREE.Mesh(roundedBoxGeometry(0.55,0.12,0.38,0.05,0.03), new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.8}));
+  pillow.position.set(-3.6, 0.52, -1.15);
+  pillow.rotation.y = 0.08;
+  scene.add(pillow);
+  const headboard = new THREE.Mesh(roundedBoxGeometry(1.3,0.55,0.08,0.03,0.015), woodMaterial(0x3a2a1c, 0x1c130b, 2, 1, {roughness:0.6}));
+  headboard.position.set(-3.6, 0.55, -1.42);
+  scene.add(headboard);
+  const nightstand = new THREE.Mesh(roundedBoxGeometry(0.32,0.4,0.32,0.015), woodMaterial(0x4a3626, 0x28180d, 1, 1, {roughness:0.6}));
+  nightstand.position.set(-2.75, 0.2, -1.15);
+  scene.add(nightstand);
+  addSolid(-2.75, -1.15, 0.32, 0.32);
+  const bedLamp = new THREE.Mesh(new THREE.ConeGeometry(0.09,0.13,12,1,true), new THREE.MeshStandardMaterial({color:0xf2e6cf, side:THREE.DoubleSide}));
+  bedLamp.position.set(-2.75, 0.48, -1.15);
+  scene.add(bedLamp);
+
+  // A small stack of books on the nightstand — cheap thin rounded boxes,
+  // slightly rotated/offset from each other so they read as "actually
+  // placed there" rather than a single stacked prop.
+  const nightstandBookColors = [0xb5443c, 0x3a6b52, 0xc9a24a];
+  let bookY = 0.405;
+  nightstandBookColors.forEach((col, i)=>{
+    const book = new THREE.Mesh(roundedBoxGeometry(0.22,0.028,0.16,0.006,0.004), new THREE.MeshStandardMaterial({color:col, roughness:0.7}));
+    book.position.set(-2.85 + (i-1)*0.025, bookY, -1.24 - i*0.008);
+    book.rotation.y = (i-1)*0.12;
+    scene.add(book);
+    bookY += 0.03;
+  });
+
+  // A simple potted plant by the TV stand — a stem of cone "leaves" fanned
+  // around a trunk, sitting in a tapered pot. Breaks up the boxy furniture
+  // silhouette with an organic shape and adds a lived-in feel.
+  const plantGroup = new THREE.Group();
+  const potMat = new THREE.MeshStandardMaterial({color:0xb5601f, roughness:0.7});
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,0.14,12), potMat);
+  pot.position.y = 0.07;
+  plantGroup.add(pot);
+  const leafMat = new THREE.MeshStandardMaterial({color:0x3d7a4a, roughness:0.75, side:THREE.DoubleSide});
+  for(let i=0;i<6;i++){
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.045,0.32,4,1,true), leafMat);
+    const ang = (i/6)*Math.PI*2;
+    leaf.position.set(Math.cos(ang)*0.03, 0.16+0.16*Math.random()*0.15, Math.sin(ang)*0.03);
+    leaf.rotation.z = Math.cos(ang)*0.5;
+    leaf.rotation.x = Math.sin(ang)*0.5 + 0.15;
+    leaf.rotation.y = ang;
+    leaf.scale.setScalar(0.85+Math.random()*0.3);
+    plantGroup.add(leaf);
+  }
+  plantGroup.position.set(0.95, 0.42, 1.85);
+  scene.add(plantGroup);
+
+  const tvStand = new THREE.Mesh(roundedBoxGeometry(0.35,0.42,0.9,0.02), woodMaterial(0x2e2620, 0x16110c, 2, 1, {roughness:0.5}));
+  tvStand.position.set(1.62, 0.21, 1.55);
+  scene.add(tvStand);
+  addSolid(1.62, 1.55, 0.35, 0.9);
+  const tvScreen = new THREE.Mesh(roundedBoxGeometry(0.05,0.55,0.95,0.02,0.008), new THREE.MeshStandardMaterial({color:0x0c0e12, emissive:0x14202e, emissiveIntensity:0.6, roughness:0.2}));
+  tvScreen.position.set(1.78, 1.15, 1.55);
+  scene.add(tvScreen);
+  // Thin glowing edge strip on the screen face — a hint of an actual
+  // picture/standby light rather than a dead black slab.
+  const tvGlowStrip = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.9), new THREE.MeshBasicMaterial({color:0x2a4a6e, transparent:true, opacity:0.5}));
+  tvGlowStrip.rotation.y = Math.PI/2;
+  tvGlowStrip.position.set(1.755, 1.15, 1.55);
+  scene.add(tvGlowStrip);
+  const tvGlow = new THREE.PointLight(0x3d6fa0, 0.35, 3);
+  tvGlow.position.set(1.5, 1.15, 1.55);
+  scene.add(tvGlow);
+
+  const sofaMat = new THREE.MeshStandardMaterial({color:0x5c6f8a, roughness:0.9});
+  const sofaGroup = new THREE.Group();
+  const sofaSeat = new THREE.Mesh(roundedBoxGeometry(0.55,0.32,1.5,0.05), sofaMat);
+  sofaSeat.position.set(0,0.18,0);
+  sofaGroup.add(sofaSeat);
+  // Backrest and armrests were each sized to their own footprint without
+  // checking against the seat cushion's actual edges, so the backrest's
+  // outer face landed 0.5cm past the seat's side and each armrest's front
+  // face landed 1cm past the seat's front/back edge — reads as the
+  // cushions poking straight through the sofa's own silhouette. Both are
+  // now pulled a small margin inside the seat's bounds instead of flush
+  // or past them, so nothing overhangs and nothing z-fights either.
+  const sofaBack = new THREE.Mesh(roundedBoxGeometry(0.16,0.55,1.5,0.04), sofaMat);
+  sofaBack.position.set(-0.19,0.36,0);
+  sofaGroup.add(sofaBack);
+  [ -0.665, 0.665 ].forEach(az=>{
+    const arm = new THREE.Mesh(roundedBoxGeometry(0.55,0.42,0.14,0.04), sofaMat);
+    arm.position.set(0,0.27,az);
+    sofaGroup.add(arm);
+  });
+  sofaGroup.position.set(0.3, 0, 1.55);
+  scene.add(sofaGroup);
+  addSolid(0.3, 1.55, 0.9, 1.5);
+
+  const coffeeTable = new THREE.Mesh(roundedBoxGeometry(0.6,0.35,0.4,0.02), woodMaterial(0x6b4a30, 0x3d2717, 1.5, 1, {roughness:0.5}));
+  coffeeTable.position.set(1.0, 0.175, 1.55);
+  scene.add(coffeeTable);
+  const bookshelf = new THREE.Mesh(roundedBoxGeometry(0.3,1.7,0.9,0.02), woodMaterial(0x4a3626, 0x28180d, 1, 3, {roughness:0.6}));
+  bookshelf.position.set(-ROOM_W/2+0.15, 0.85, 1.0);
+  scene.add(bookshelf);
+  addSolid(-ROOM_W/2+0.15, 1.0, 0.3, 0.9);
+  const bookColors = [0xc0392b,0x2980b9,0xf2c94c,0x27ae60,0x8e44ad,0xe67e22];
+  for(let shelf=0; shelf<3; shelf++){
+    let bz = 0.55;
+    for(let i=0;i<6;i++){
+      const bw = 0.05+Math.random()*0.02;
+      const book = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.22,bw), new THREE.MeshStandardMaterial({color:bookColors[i%bookColors.length], roughness:0.7}));
+      book.position.set(-ROOM_W/2+0.15, 0.25+shelf*0.55, bz);
+      scene.add(book);
+      bz += bw+0.01;
+    }
+  }
+
+  // Wall art is deliberately a single, inset plane. The earlier line-graph
+  // drawing sat almost flush with the wall and read like several overlapping
+  // charts; at certain angles the two surfaces fought for the same pixel and
+  // visibly shimmered. A slight depth offset plus polygon offset keeps the
+  // artwork stable without adding more geometry against the wall.
+  function makeFrame(w,h,bgColor,accentColor){
+    const c = document.createElement('canvas'); c.width=256; c.height=Math.round(256*(h/w));
+    const g = c.getContext('2d');
+    g.fillStyle = bgColor; g.fillRect(0,0,c.width,c.height);
+    const wash = g.createLinearGradient(0,0,c.width,c.height);
+    wash.addColorStop(0, 'rgba(255,255,255,0.38)');
+    wash.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = wash; g.fillRect(0,0,c.width,c.height);
+    g.fillStyle = accentColor; g.globalAlpha=0.82;
+    g.beginPath(); g.arc(c.width*0.32,c.height*0.36,Math.min(c.width,c.height)*0.18,0,Math.PI*2); g.fill();
+    g.globalAlpha=0.46;
+    g.beginPath(); g.arc(c.width*0.68,c.height*0.63,Math.min(c.width,c.height)*0.26,0,Math.PI*2); g.fill();
+    g.globalAlpha=1;
+    g.strokeStyle = 'rgba(255,255,255,0.72)'; g.lineWidth=8;
+    g.strokeRect(12,12,c.width-24,c.height-24);
+    const tex = new THREE.CanvasTexture(c);
+    tex.encoding = THREE.sRGBEncoding;
+    const frame = new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshStandardMaterial({
+      map:tex, roughness:0.82, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2
+    }));
+    return frame;
+  }
+  const art1 = makeFrame(0.5,0.65,'#dfe6ee','#f2c94c');
+  art1.position.set(-ROOM_W/2+0.11, 1.85, 1.9);
+  art1.rotation.y = Math.PI/2;
+  scene.add(art1);
+  const art2 = makeFrame(0.45,0.6,'#2c3e50','#6fa8ff');
+  art2.position.set(-ROOM_W/2+0.11, 1.8, 0.3);
+  art2.rotation.y = Math.PI/2;
+  scene.add(art2);
+
+  function makePlant(x,z,scale){
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.12*scale,0.09*scale,0.18*scale,12), new THREE.MeshStandardMaterial({color:0xb5623c, roughness:0.8}));
+    pot.position.set(x, 0.09*scale, z);
+    scene.add(pot);
+    const foliage = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22*scale,0), new THREE.MeshStandardMaterial({color:0x3f7d4a, roughness:0.85, flatShading:true}));
+    foliage.position.set(x, 0.32*scale, z);
+    scene.add(foliage);
+    const foliage2 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15*scale,0), new THREE.MeshStandardMaterial({color:0x4f9a5a, roughness:0.85, flatShading:true}));
+    foliage2.position.set(x+0.08*scale, 0.46*scale, z-0.05*scale);
+    scene.add(foliage2);
+  }
+  makePlant(-3.9, 4.2, 1.3);
+  makePlant(0.9, -4.6, 1.0);
+  makePlant(3.85, 0.55, 1.0);
+
+  const shoeRack = new THREE.Mesh(new THREE.BoxGeometry(0.75,0.5,0.32), new THREE.MeshStandardMaterial({color:0x5a4632, roughness:0.6}));
+  shoeRack.position.set(-2.1, 0.25, 5.3);
+  scene.add(shoeRack);
+  addSolid(-2.1, 5.3, 0.75, 0.32);
+  const shoeShelf = new THREE.Mesh(new THREE.BoxGeometry(0.75,0.02,0.32), new THREE.MeshStandardMaterial({color:0x6b5638}));
+  shoeShelf.position.set(-2.1, 0.42, 5.3);
+  scene.add(shoeShelf);
+
+  const hookColors = [0xe74c3c, 0x2980b9, 0xf2c94c];
+  hookColors.forEach((c,i)=>{
+    const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.08,8), new THREE.MeshStandardMaterial({color:0x333333, metalness:0.6}));
+    peg.rotation.z = Math.PI/2;
+    peg.position.set(-ROOM_W/2+0.06, 1.7, 4.5+i*0.35);
+    scene.add(peg);
+    const coat = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.22,0.14), new THREE.MeshStandardMaterial({color:c, roughness:0.8}));
+    coat.position.set(-ROOM_W/2+0.1, 1.55, 4.5+i*0.35);
+    scene.add(coat);
+  });
+  const mirrorFrame = new THREE.Mesh(new THREE.CircleGeometry(0.28,24), new THREE.MeshStandardMaterial({color:0xc9a04a, metalness:0.6, roughness:0.3}));
+  mirrorFrame.position.set(-ROOM_W/2+0.08, 1.5, 3.6);
+  mirrorFrame.rotation.y = Math.PI/2;
+  scene.add(mirrorFrame);
+  const mirrorGlass = new THREE.Mesh(new THREE.CircleGeometry(0.23,24), new THREE.MeshStandardMaterial({color:0xaecbe8, metalness:0.9, roughness:0.05}));
+  mirrorGlass.position.set(-ROOM_W/2+0.09, 1.5, 3.6);
+  mirrorGlass.rotation.y = Math.PI/2;
+  scene.add(mirrorGlass);
+
+  // Utility-room objects are distributed across the tiled zone instead of
+  // being stacked along the right-hand wall. Keep the main valve's wall
+  // area clear, and use the back/left sides for storage and tools.
+  const washerX = 3.78, washerZ = 1.05;
+  const washer = new THREE.Mesh(roundedBoxGeometry(0.55,0.85,0.55,0.03), new THREE.MeshStandardMaterial({color:0xe8ebee, metalness:0.3, roughness:0.4}));
+  washer.position.set(washerX, 0.425, washerZ);
+  scene.add(washer);
+  addSolid(washerX, washerZ, 0.55, 0.55);
+  const washerRing = new THREE.Mesh(new THREE.TorusGeometry(0.16,0.025,10,20), new THREE.MeshStandardMaterial({color:0x333333, metalness:0.5}));
+  washerRing.rotation.y = Math.PI/2;
+  washerRing.position.set(washerX-0.28, 0.4, washerZ);
+  scene.add(washerRing);
+  const washerDoor = new THREE.Mesh(new THREE.CircleGeometry(0.14,20), new THREE.MeshStandardMaterial({color:0x1c2530, roughness:0.2}));
+  washerDoor.rotation.y = Math.PI/2;
+  washerDoor.position.set(washerX-0.276, 0.4, washerZ);
+  scene.add(washerDoor);
+  // Control panel on top — without this, the washer reads as a blank pale
+  // slab from any angle that doesn't line up with the front door porthole.
+  const washerPanel = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.03,0.12), new THREE.MeshStandardMaterial({color:0xcfd3d8, roughness:0.4}));
+  washerPanel.position.set(washerX, 0.865, washerZ-0.12);
+  scene.add(washerPanel);
+  [-0.15, -0.03, 0.09].forEach(dx=>{
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.015,12), new THREE.MeshStandardMaterial({color:0x5a6068, metalness:0.5}));
+    knob.rotation.x = Math.PI/2;
+    knob.position.set(washerX+dx, 0.882, washerZ-0.12);
+    scene.add(knob);
+  });
+  const washerLed = new THREE.Mesh(new THREE.SphereGeometry(0.008,8,8), new THREE.MeshBasicMaterial({color:0x4ade80}));
+  washerLed.position.set(washerX+0.2, 0.882, washerZ-0.12);
+  scene.add(washerLed);
+
+  // Left utility shelf: the CC0 detergent-bottle icon is used only on the
+  // small product labels; the colored 3D bottles remain visible as an
+  // offline fallback. Source: Wikimedia Commons, Temaki contributors (CC0).
+  const shelfX = 2.08, shelfZ = -1.25;
+  const shelfMat = new THREE.MeshStandardMaterial({color:0xf0f2f4, metalness:0.2, roughness:0.45});
+  const utilityShelf = new THREE.Group();
+  [[-0.36],[0.36]].forEach(([dz])=>{
+    const upright = new THREE.Mesh(new THREE.BoxGeometry(0.08,1.45,0.08), shelfMat);
+    upright.position.set(shelfX,0.725,shelfZ+dz); scene.add(upright);
+  });
+  [0.2,0.62,1.04,1.43].forEach(sy=>{
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.035,0.82), shelfMat);
+    shelf.position.set(shelfX+0.1,sy,shelfZ); scene.add(shelf);
+  });
+  const detergentIcon = new THREE.TextureLoader().load(
+    'https://commons.wikimedia.org/wiki/Special:FilePath/Detergent_bottle_Pinhead_icon.svg?width=256',
+    tex => { tex.encoding = THREE.sRGBEncoding; }
+  );
+  function addDetergentBottle(x,y,z,color){
+    const bottleGroup = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.052,0.15,14), new THREE.MeshStandardMaterial({color, roughness:0.36}));
+    body.position.y=0.075; bottleGroup.add(body);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.028,0.04,12), new THREE.MeshStandardMaterial({color, roughness:0.36}));
+    neck.position.y=0.165; bottleGroup.add(neck);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.025,12), new THREE.MeshStandardMaterial({color:0xf5f5f5, roughness:0.42}));
+    cap.position.y=0.198; bottleGroup.add(cap);
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.06,0.075), new THREE.MeshBasicMaterial({map:detergentIcon, transparent:true, side:THREE.DoubleSide}));
+    label.rotation.y=Math.PI/2; label.position.set(0.053,0.09,0); bottleGroup.add(label);
+    bottleGroup.position.set(x,y,z); scene.add(bottleGroup);
+  }
+  [[0x3d6bb0,-0.24,0.24],[0xe0a334,-0.02,-0.18],[0x6ba34d,0.21,0.13],[0xd9859d,0.25,-0.25]].forEach(([c,dx,dz], i)=>{
+    addDetergentBottle(shelfX+0.12, i<2?0.22:0.64, shelfZ+dz, c);
+  });
+  addSolid(shelfX+0.1, shelfZ, 0.34, 0.82);
+
+  // Extra dressing for the utility nook, which was left mostly bare — a
+  // pegboard with tool silhouettes, a stack of storage boxes, and a step
+  // stool, spread across the previously-empty left/middle floor area.
+  const pegboard = new THREE.Mesh(new THREE.BoxGeometry(0.95,0.85,0.05), new THREE.MeshStandardMaterial({color:0x9a8564, roughness:0.8}));
+  pegboard.position.set(3.25, 1.65, -2.12);
+  scene.add(pegboard);
+  // The panel is a narrow freestanding rack at the back of the tiled area,
+  // not a loose plane floating in the middle of the room.
+  const rackMat = new THREE.MeshStandardMaterial({color:0x56616b, metalness:0.45, roughness:0.42});
+  [2.82,3.68].forEach(rx=>{
+    const rackPost = new THREE.Mesh(new THREE.BoxGeometry(0.045,1.72,0.045), rackMat);
+    rackPost.position.set(rx,0.86,-2.1); scene.add(rackPost);
+    const rackFoot = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.035,0.18), rackMat);
+    rackFoot.position.set(rx,0.018,-2.06); scene.add(rackFoot);
+  });
+  const toolMat = new THREE.MeshStandardMaterial({color:0x8a8f98, metalness:0.5, roughness:0.4});
+  const wrenchHead = new THREE.Mesh(new THREE.TorusGeometry(0.045,0.014,8,16), toolMat);
+  wrenchHead.position.set(2.98, 1.88, -2.08);
+  scene.add(wrenchHead);
+  const wrenchHandle = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.18,0.03), toolMat);
+  wrenchHandle.position.set(2.98, 1.75, -2.08);
+  scene.add(wrenchHandle);
+  const hoseCoil = new THREE.Mesh(new THREE.TorusGeometry(0.11,0.02,8,20), new THREE.MeshStandardMaterial({color:0x2e7d4f, roughness:0.7}));
+  hoseCoil.position.set(3.52, 1.52, -2.08);
+  scene.add(hoseCoil);
+
+  const boxMat1 = new THREE.MeshStandardMaterial({color:0xc9a876, roughness:0.85});
+  const storageBox1 = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.32,0.4), boxMat1);
+  storageBox1.position.set(2.45, 0.16, 0.72);
+  scene.add(storageBox1);
+  addSolid(2.45, 0.72, 0.4, 0.4);
+  const storageBox2 = new THREE.Mesh(new THREE.BoxGeometry(0.32,0.28,0.32), boxMat1);
+  storageBox2.position.set(2.6, 0.32+0.14, 0.87);
+  scene.add(storageBox2);
+  const boxTapeMat = new THREE.MeshStandardMaterial({color:0x8a6a45, roughness:0.7});
+  const boxTape1 = new THREE.Mesh(new THREE.BoxGeometry(0.41,0.04,0.05), boxTapeMat);
+  boxTape1.position.set(2.45, 0.16, 0.72);
+  scene.add(boxTape1);
+
+  const stoolTop = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.03,16), woodMaterial(0x4a3626, 0x28180d, 2, 1, {roughness:0.6}));
+  stoolTop.position.set(3.05, 0.32, 0.3);
+  scene.add(stoolTop);
+  [[0.11,0.11],[-0.11,0.11],[0.11,-0.11],[-0.11,-0.11]].forEach(([dx,dz])=>{
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.3,8), new THREE.MeshStandardMaterial({color:0x2e2620}));
+    leg.position.set(3.05+dx, 0.16, 0.3+dz);
+    scene.add(leg);
+  });
+
+  // The entrance hallway's east wall (near the leak-spot pole, kept clear of
+  // furniture right at the pole itself) was otherwise completely bare —
+  // just wall and floor. A console table with a lamp, a plant, and a framed
+  // picture fill that stretch without touching the leak-spot interaction
+  // point at (ROOM_W/2-0.12, 1.0, 3.5).
+  const hallConsoleMat = woodMaterial(0x5c4028, 0x2c1a10, 1, 1.5, {roughness:0.55});
+  const hallConsole = new THREE.Mesh(new THREE.BoxGeometry(0.32,0.72,0.9), hallConsoleMat);
+  hallConsole.position.set(ROOM_W/2-0.2, 0.36, 1.6);
+  scene.add(hallConsole);
+  addSolid(ROOM_W/2-0.2, 1.6, 0.32, 0.9);
+  const hallConsoleTop = new THREE.Mesh(new THREE.BoxGeometry(0.36,0.03,0.96), hallConsoleMat);
+  hallConsoleTop.position.set(ROOM_W/2-0.2, 0.735, 1.6);
+  scene.add(hallConsoleTop);
+  const hallLampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.06,0.05,12), new THREE.MeshStandardMaterial({color:0x2b2320, roughness:0.5}));
+  hallLampBase.position.set(ROOM_W/2-0.25, 0.775, 1.85);
+  scene.add(hallLampBase);
+  const hallLampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.28,8), new THREE.MeshStandardMaterial({color:0x8a8f98, metalness:0.5, roughness:0.4}));
+  hallLampPole.position.set(ROOM_W/2-0.25, 0.92, 1.85);
+  scene.add(hallLampPole);
+  const hallLampShade = new THREE.Mesh(new THREE.ConeGeometry(0.09,0.13,16,1,true), new THREE.MeshStandardMaterial({color:0xf2e6c8, emissive:0x3a2f14, side:THREE.DoubleSide, roughness:0.6}));
+  hallLampShade.position.set(ROOM_W/2-0.25, 1.1, 1.85);
+  scene.add(hallLampShade);
+  const hallVase = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.045,0.13,10), new THREE.MeshStandardMaterial({color:0x3d6bb0, roughness:0.5}));
+  hallVase.position.set(ROOM_W/2-0.25, 0.815, 1.35);
+  scene.add(hallVase);
+  const hallBasket = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.11,0.22,14), new THREE.MeshStandardMaterial({color:0xa88452, roughness:0.9}));
+  hallBasket.position.set(ROOM_W/2-0.55, 0.11, 0.9);
+  scene.add(hallBasket);
+  addSolid(ROOM_W/2-0.55, 0.9, 0.28, 0.28);
+  // This exact spot (mid-wall, clearly in view from the nook) is where the
+  // TV actually needs to be — the previous wall-mount was further down the
+  // same wall near z=4.4, technically clear of other furniture but out at
+  // the edge of the frame from where the player normally looks. The old
+  // decorative frame that lived here is dropped in favor of the TV.
+  const nookTvScreen = new THREE.Mesh(roundedBoxGeometry(0.05,0.55,0.95,0.02,0.008), new THREE.MeshStandardMaterial({color:0x0c0e12, emissive:0x2a4a6e, emissiveIntensity:0.9, roughness:0.2}));
+  nookTvScreen.position.set(ROOM_W/2-0.12, 1.55, 2.5);
+  scene.add(nookTvScreen);
+  const nookTvBracket = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.08,0.3), new THREE.MeshStandardMaterial({color:0x2b2320, roughness:0.5}));
+  nookTvBracket.position.set(ROOM_W/2-0.08, 1.55, 2.5);
+  scene.add(nookTvBracket);
+  const nookTvConsole = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.4,0.9), woodMaterial(0x2e2620, 0x16110c, 2, 1, {roughness:0.5}));
+  nookTvConsole.position.set(ROOM_W/2-0.25, 0.2, 2.5);
+  scene.add(nookTvConsole);
+  addSolid(ROOM_W/2-0.25, 2.5, 0.3, 0.9);
+  // The old abstract-art frame is repurposed further along the same wall,
+  // by the entrance, instead of just deleted — one more thing filling
+  // otherwise-bare wall.
+  const entryArt = makeFrame(0.42,0.55,'#eef2f6','#6ba3c9');
+  entryArt.position.set(ROOM_W/2-0.11, 1.75, 0.6);
+  entryArt.rotation.y = -Math.PI/2;
+  scene.add(entryArt);
+
+  // The wide open stretch of floor between the bed area, the dining table,
+  // and the entrance door (roughly x -2..1, z 2.5..5) had nothing in it at
+  // all — just bare floor. A small reading nook (nookShelf, loveseat bench,
+  // low coffee table, rug, floor lamp) fills it in.
+  const nookRugMat = new THREE.MeshStandardMaterial({color:0x3d5a6b, roughness:1});
+  const nookRug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 32), nookRugMat);
+  nookRug.rotation.x = -Math.PI/2;
+  nookRug.position.set(-0.6, 0.006, 3.7);
+  scene.add(nookRug);
+
+  const nookWoodMat = woodMaterial(0x5c4028, 0x2c1a10, 1, 1.5, {roughness:0.55});
+  // Narrower and moved to the one open gap on this wall (between the
+  // existing art1 frame and the mirror) instead of overlapping the mirror
+  // like before.
+  const nookShelf = new THREE.Mesh(new THREE.BoxGeometry(0.7,1.9,0.32), nookWoodMat);
+  nookShelf.position.set(-ROOM_W/2+0.18, 0.95, 2.6);
+  nookShelf.rotation.y = Math.PI/2;
+  scene.add(nookShelf);
+  addSolid(-ROOM_W/2+0.18, 2.6, 0.32, 0.7);
+  [0.35,0.75,1.15,1.55].forEach(sy=>{
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.62,0.02,0.28), nookWoodMat);
+    shelf.position.set(-ROOM_W/2+0.18, sy, 2.6);
+    shelf.rotation.y = Math.PI/2;
+    scene.add(shelf);
+  });
+  const nookBookColors = [0xd8542f,0x3d6bb0,0x7fae4a,0xf0c23a];
+  [0.44,0.84,1.24].forEach((sy,row)=>{
+    let ox = -0.24;
+    nookBookColors.forEach((col,i)=>{
+      const bw = 0.05 + (i%3)*0.015, bh = 0.16 + (i%2)*0.05;
+      const book = new THREE.Mesh(new THREE.BoxGeometry(bw,bh,0.22), new THREE.MeshStandardMaterial({color:col, roughness:0.7}));
+      book.position.set(-ROOM_W/2+0.18, sy+bh/2+0.01, 2.6+ox);
+      book.rotation.y = Math.PI/2;
+      scene.add(book);
+      ox += bw+0.015;
+    });
+  });
+
+  const benchMat = new THREE.MeshStandardMaterial({color:0x6b8299, roughness:0.85});
+  const benchSeat = new THREE.Mesh(roundedBoxGeometry(1.1,0.14,0.5,0.04), benchMat);
+  benchSeat.position.set(-0.6, 0.4, 4.35);
+  scene.add(benchSeat);
+  const benchBack = new THREE.Mesh(roundedBoxGeometry(1.1,0.5,0.12,0.04), benchMat);
+  benchBack.position.set(-0.6, 0.68, 4.62);
+  scene.add(benchBack);
+  addSolid(-0.6, 4.4, 1.1, 0.6);
+  [[-0.47,-0.18],[0.47,-0.18],[-0.47,0.18],[0.47,0.18]].forEach(([lx,lz])=>{
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.33,8), new THREE.MeshStandardMaterial({color:0x2b2320, roughness:0.5}));
+    leg.position.set(-0.6+lx, 0.165, 4.35+lz);
+    scene.add(leg);
+  });
+
+  const nookCoffeeTable = new THREE.Mesh(roundedBoxGeometry(0.7,0.05,0.42,0.03), nookWoodMat);
+  nookCoffeeTable.position.set(-0.6, 0.32, 3.55);
+  scene.add(nookCoffeeTable);
+  addSolid(-0.6, 3.55, 0.7, 0.42);
+  [[-0.28,-0.16],[0.28,-0.16],[-0.28,0.16],[0.28,0.16]].forEach(([lx,lz])=>{
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.29,8), new THREE.MeshStandardMaterial({color:0x2b2320, roughness:0.5}));
+    leg.position.set(-0.6+lx, 0.16, 3.55+lz);
+    scene.add(leg);
+  });
+  const nookMug = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.03,0.06,12), new THREE.MeshStandardMaterial({color:0xeef2f6, roughness:0.4}));
+  nookMug.position.set(-0.75, 0.375, 3.6);
+  scene.add(nookMug);
+
+  // Extra filling for the nook — throw pillows on the bench, a stack of
+  // magazines and an open book on the coffee table, and a small round side
+  // table, instead of yet another potted plant.
+  [[-0.32,0x8a4fae],[0.3,0xe0664a]].forEach(([ox,col])=>{
+    const pillow = new THREE.Mesh(roundedBoxGeometry(0.24,0.16,0.22,0.06), new THREE.MeshStandardMaterial({color:col, roughness:0.85}));
+    pillow.position.set(-0.6+ox, 0.55, 4.42);
+    pillow.rotation.y = ox<0 ? 0.25 : -0.25;
+    pillow.rotation.z = 0.08;
+    scene.add(pillow);
+  });
+  [[0xdedede,0],[0x8a3f2f,0.02],[0xf0c23a,0.04]].forEach(([col,oy],i)=>{
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.015,0.3), new THREE.MeshStandardMaterial({color:col, roughness:0.7}));
+    mag.position.set(-0.38, 0.355+oy, 3.62);
+    mag.rotation.y = i*0.15;
+    scene.add(mag);
+  });
+  const openBook = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.01,0.19), new THREE.MeshStandardMaterial({color:0xf5f0e6, roughness:0.8}));
+  openBook.position.set(-0.72, 0.35, 3.48);
+  openBook.rotation.y = -0.3;
+  scene.add(openBook);
+
+  const sideTableMat = woodMaterial(0x6b4a30, 0x3d2717, 1, 1.5, {roughness:0.6});
+  const sideTableTop = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.03,16), sideTableMat);
+  sideTableTop.position.set(-1.35, 0.42, 4.15);
+  scene.add(sideTableTop);
+  addSolid(-1.35, 4.15, 0.32, 0.32);
+  const sideTableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.4,8), sideTableMat);
+  sideTableLeg.position.set(-1.35, 0.22, 4.15);
+  scene.add(sideTableLeg);
+  const candleHolder = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.035,0.08,12), new THREE.MeshStandardMaterial({color:0xd9cbb0, roughness:0.6}));
+  candleHolder.position.set(-1.35, 0.475, 4.15);
+  scene.add(candleHolder);
+
+  const nookLampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,0.04,16), new THREE.MeshStandardMaterial({color:0x2b2320, roughness:0.5}));
+  nookLampBase.position.set(0.35, 0.02, 4.5);
+  scene.add(nookLampBase);
+  const nookLampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.014,1.15,8), new THREE.MeshStandardMaterial({color:0x8a8f98, metalness:0.5, roughness:0.4}));
+  nookLampPole.position.set(0.35, 0.6, 4.5);
+  scene.add(nookLampPole);
+  const nookLampShade = new THREE.Mesh(new THREE.ConeGeometry(0.18,0.26,20,1,true), new THREE.MeshStandardMaterial({color:0xf2e6c8, emissive:0x3a2f14, side:THREE.DoubleSide, roughness:0.6}));
+  nookLampShade.position.set(0.35, 1.28, 4.5);
+  scene.add(nookLampShade);
+  const nookLampLight = new THREE.PointLight(0xffe0a0, 0.5, 3.5, 2);
+  nookLampLight.position.set(0.35, 1.2, 4.5);
+  scene.add(nookLampLight);
+
+  // A second low console further along, filling more of the open floor
+  // near the entrance, with a basket and a stack of folded towels.
+  const entryConsole2 = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.4,0.9), woodMaterial(0x2e2620, 0x16110c, 2, 1, {roughness:0.5}));
+  entryConsole2.position.set(ROOM_W/2-0.25, 0.2, 4.4);
+  scene.add(entryConsole2);
+  addSolid(ROOM_W/2-0.25, 4.4, 0.3, 0.9);
+  const entryConsole2Basket = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.1,0.16,14), new THREE.MeshStandardMaterial({color:0xa88452, roughness:0.9}));
+  entryConsole2Basket.position.set(ROOM_W/2-0.25, 0.48, 4.15);
+  scene.add(entryConsole2Basket);
+  [0xeef2f6,0xd9c9a8].forEach((col,i)=>{
+    const towel = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.05,0.18), new THREE.MeshStandardMaterial({color:col, roughness:0.9}));
+    towel.position.set(ROOM_W/2-0.25, 0.425+i*0.05, 4.65);
+    scene.add(towel);
+  });
+
+  // A few more touches to round the room out further: a wall clock over the
+  // shelf, a throw blanket on the bench, and a laptop on the side table.
+  const nookClockCanvas = document.createElement('canvas');
+  nookClockCanvas.width = 128; nookClockCanvas.height = 128;
+  const nkctx = nookClockCanvas.getContext('2d');
+  nkctx.fillStyle = '#f5f0e6'; nkctx.beginPath(); nkctx.arc(64,64,60,0,Math.PI*2); nkctx.fill();
+  nkctx.strokeStyle = '#2b2320'; nkctx.lineWidth = 5; nkctx.stroke();
+  nkctx.lineWidth = 3; nkctx.beginPath(); nkctx.moveTo(64,64); nkctx.lineTo(64+Math.cos(-1.4)*32,64+Math.sin(-1.4)*32); nkctx.stroke();
+  nkctx.lineWidth = 2; nkctx.beginPath(); nkctx.moveTo(64,64); nkctx.lineTo(64+Math.cos(0.4)*42,64+Math.sin(0.4)*42); nkctx.stroke();
+  const nookClockTex = new THREE.CanvasTexture(nookClockCanvas);
+  const nookClock = new THREE.Mesh(new THREE.CircleGeometry(0.12,24), new THREE.MeshStandardMaterial({map:nookClockTex, side:THREE.DoubleSide}));
+  nookClock.position.set(-ROOM_W/2+0.09, 1.75, 2.6);
+  nookClock.rotation.y = Math.PI/2;
+  scene.add(nookClock);
+
+  // Was centered at z=4.55 with a 0.4 depth (range 4.35–4.75), which put it
+  // dead center through the backrest panel (front face at z=4.56) — the
+  // blanket was rendering on both sides of the backrest simultaneously,
+  // reading as it bursting straight through. Pulled forward onto the open
+  // part of the seat cushion (well clear of the backrest) and slightly
+  // shrunk so it can hang a little over the seat's front edge instead of
+  // overlapping anything behind it.
+  const throwBlanket = new THREE.Mesh(roundedBoxGeometry(0.5,0.06,0.3,0.03), new THREE.MeshStandardMaterial({color:0xd8a24a, roughness:0.9}));
+  throwBlanket.position.set(-0.6, 0.5, 4.16);
+  throwBlanket.rotation.z = 0.1;
+  scene.add(throwBlanket);
+
+  const laptopBase = new THREE.Mesh(roundedBoxGeometry(0.24,0.014,0.17,0.01), new THREE.MeshStandardMaterial({color:0xb8bcc2, metalness:0.4, roughness:0.4}));
+  laptopBase.position.set(-1.35, 0.435, 4.1);
+  scene.add(laptopBase);
+  const laptopScreen = new THREE.Mesh(roundedBoxGeometry(0.24,0.16,0.01,0.01), new THREE.MeshStandardMaterial({color:0x1a1d22, roughness:0.3}));
+  laptopScreen.position.set(-1.35, 0.51, 4.03);
+  laptopScreen.rotation.x = -0.35;
+  scene.add(laptopScreen);
+
+
+  /* ============ MOVEMENT / CONTROLS ============ */
+  let yaw = 0, pitch = 0;
+  const keys = {};
+  const EYE_HEIGHT = 1.65;
+  let walkTime = 0;
+  let isMoving = false;
+  let stepTimer = 0.34;
+
+  document.addEventListener('keydown', e=>{
+    keys[e.code]=true;
+    if(e.code==='Escape') pauseGame();
+  });
+  document.addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+  const domEl = renderer.domElement;
+  let dragging = false, dragMoved = false, lastX=0, lastY=0;
+
+  // Physical interaction gestures, replacing plain single clicks:
+  //  - 'turn'  (stoveValve, mainValve): drag in a circle around screen center
+  //  - 'dragUp' (window): drag straight upward
+  //  - 'hold'  (leakPoint): just hold the mouse down while aiming at it
+  // turningId names whichever gesture-driven interactable is currently active;
+  // only one can run at a time and it fully takes over pointer input so the
+  // normal camera-look drag doesn't fight with it.
+  let turningId = null, turnAngleAccum = 0, turnLastAngle = null;
+  const VALVE_TURN_TARGET = Math.PI * 3.0; // was 2.2 — a bit more turning effort per valve
+
+  let draggingWindow = false, windowDragProgress = 0, windowDragStartY = 0;
+  const WINDOW_DRAG_TARGET = 230; // was 160 — a longer pull
+
+  let holdingId = null, sprayProgress = 0;
+  const LEAK_SPRAY_TARGET = 1.6; // was 1.1 — was over almost instantly
+
+  const GESTURE_BY_ID = { stoveValve:'turn', mainValve:'turn', window:'dragUp', leakPoint:'hold', extinguisher:'hold' };
+  // Center glyph per gesture type — tells you WHAT motion to make.
+  const GESTURE_LABEL = { turn:'↻', dragUp:'↑', hold:'🖱️' };
+  const RING_CIRCUMFERENCE = 2 * Math.PI * 32; // matches the SVG circle r=32 below
+
+  const gestureHintEl = document.getElementById('gesture-hint');
+  gestureHintEl.innerHTML = `
+    <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,209,102,0.25)" stroke-width="5"/>
+      <circle id="ghint-ring" cx="40" cy="40" r="32" fill="none" stroke="#ffd166" stroke-width="5"
+        stroke-linecap="round" stroke-dasharray="${RING_CIRCUMFERENCE.toFixed(2)}"
+        stroke-dashoffset="${RING_CIRCUMFERENCE.toFixed(2)}" transform="rotate(-90 40 40)"/>
+      <text id="ghint-icon" x="40" y="49" text-anchor="middle" font-size="27" fill="#ffd166" font-family="sans-serif">?</text>
+    </svg>`;
+  const ghintRing = document.getElementById('ghint-ring');
+  const ghintIcon = document.getElementById('ghint-icon');
+  let gestureHintCurrent = null;
+  // gesture: 'turn' | 'dragUp' | 'hold' | null.  progress: 0..1, how much of
+  // the motion is complete — the ring visibly fills as real progress is made
+  // (not just a decorative loop), which is the actual point of the hint.
+  function setGestureHint(gesture, progress){
+    if(!gesture){
+      if(gestureHintCurrent !== null){
+        gestureHintCurrent = null;
+        gestureHintEl.classList.remove('show');
+      }
+      return;
+    }
+    if(gesture !== gestureHintCurrent){
+      gestureHintCurrent = gesture;
+      ghintIcon.textContent = GESTURE_LABEL[gesture];
+      gestureHintEl.classList.add('show');
+    }
+    const p = Math.max(0, Math.min(1, progress || 0));
+    ghintRing.setAttribute('stroke-dashoffset', (RING_CIRCUMFERENCE * (1 - p)).toFixed(2));
+  }
+
+  function inputBlocked(){
+    return !gameState.started || gameState.ended || gameState.paused || gameState.infoOpen || gameState.quizOpen;
+  }
+
+  function pointerDown(x,y){
+    if(inputBlocked()) return;
+    const gesture = currentTarget && GESTURE_BY_ID[currentTarget.id];
+    if(gesture === 'turn'){
+      turningId = currentTarget.id;
+      turnAngleAccum = 0;
+      turnLastAngle = null;
+      domEl.style.cursor = 'grabbing';
+      return;
+    }
+    if(gesture === 'dragUp'){
+      draggingWindow = true;
+      windowDragProgress = 0;
+      windowDragStartY = y;
+      domEl.style.cursor = 'grabbing';
+      return;
+    }
+    if(gesture === 'hold'){
+      holdingId = currentTarget.id;
+      sprayProgress = 0;
+      domEl.style.cursor = 'grabbing';
+      return;
+    }
+    dragging = true; dragMoved = false; lastX = x; lastY = y;
+    domEl.style.cursor = 'grabbing';
+  }
+  function pointerMove(x,y){
+    if(turningId){
+      const cx = window.innerWidth/2, cy = window.innerHeight/2;
+      const angle = Math.atan2(y-cy, x-cx);
+      if(turnLastAngle !== null){
+        let delta = angle - turnLastAngle;
+        if(delta > Math.PI) delta -= Math.PI*2;
+        if(delta < -Math.PI) delta += Math.PI*2;
+        turnAngleAccum += Math.abs(delta);
+        if(turningId === 'stoveValve') updateValveTurnVisual();
+        else if(turningId === 'mainValve') updateMainValveTurnVisual();
+      }
+      turnLastAngle = angle;
+      return;
+    }
+    if(draggingWindow){
+      const dy = windowDragStartY - y; // upward drag = positive
+      windowDragProgress = Math.max(0, dy) / WINDOW_DRAG_TARGET;
+      updateWindowDragVisual();
+      return;
+    }
+    if(holdingId) return; // holding just needs the button down, not moved
+    if(!dragging) return;
+    const dx = x - lastX, dy = y - lastY;
+    if(Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+    yaw -= dx * 0.0045;
+    pitch -= dy * 0.0045;
+    pitch = Math.max(-1.2, Math.min(1.2, pitch));
+    lastX = x; lastY = y;
+  }
+  function pointerUp(){
+    if(turningId){
+      turningId = null;
+      turnLastAngle = null;
+      setGestureHint(null);
+      domEl.style.cursor = 'grab';
+      return;
+    }
+    if(draggingWindow){
+      draggingWindow = false;
+      windowDragProgress = 0;
+      document.getElementById('interact-prompt').classList.remove('show');
+      setGestureHint(null);
+      domEl.style.cursor = 'grab';
+      return;
+    }
+    if(holdingId){
+      if(holdingId === 'leakPoint') cancelLeakSpray();
+      else if(holdingId === 'extinguisher') cancelExtinguisherCheck();
+      holdingId = null;
+      document.getElementById('interact-prompt').classList.remove('show');
+      setGestureHint(null);
+      domEl.style.cursor = 'grab';
+      return;
+    }
+    if(dragging && !dragMoved){
+      tryInteract();
+    }
+    dragging = false;
+    domEl.style.cursor = 'grab';
+  }
+
+  domEl.addEventListener('mousedown', e=>{ if(e.button===0) pointerDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', e=>{ pointerMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', pointerUp);
+  domEl.addEventListener('touchstart', e=>{ const t=e.touches[0]; pointerDown(t.clientX,t.clientY); }, {passive:true});
+  domEl.addEventListener('touchmove', e=>{ const t=e.touches[0]; pointerMove(t.clientX,t.clientY); }, {passive:true});
+  domEl.addEventListener('touchend', pointerUp);
+  domEl.style.cursor = 'grab';
+
+  function collide(nx, nz){
+    for(const s of solids){
+      if(nx > s.minX-0.3 && nx < s.maxX+0.3 && nz > s.minZ-0.3 && nz < s.maxZ+0.3) return true;
+    }
+    return false;
+  }
+
+  function updateMovement(dt){
+    const speed = 2.6 * dt;
+    let dx=0, dz=0;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const rx = Math.sin(yaw+Math.PI/2), rz = Math.cos(yaw+Math.PI/2);
+    if(keys['KeyW']){ dx -= fx*speed; dz -= fz*speed; }
+    if(keys['KeyS']){ dx += fx*speed; dz += fz*speed; }
+    if(keys['KeyA']){ dx -= rx*speed; dz -= rz*speed; }
+    if(keys['KeyD']){ dx += rx*speed; dz += rz*speed; }
+
+    isMoving = (dx!==0 || dz!==0);
+    if(isMoving){
+      walkTime += dt;
+      stepTimer += dt;
+      if(stepTimer >= 0.33){
+        stepTimer = 0;
+        playFootstep();
+      }
+    } else {
+      stepTimer = 0.33;
+    }
+
+    const nx = camera.position.x + dx;
+    const nz = camera.position.z + dz;
+    const bound = 0.4;
+    const clampedX = Math.max(-ROOM_W/2+bound, Math.min(ROOM_W/2-bound, nx));
+    const clampedZ = Math.max(-ROOM_D/2+bound, Math.min(ROOM_D/2+1.6, nz));
+
+    if(!collide(clampedX, camera.position.z)) camera.position.x = clampedX;
+    if(!collide(camera.position.x, clampedZ)) camera.position.z = clampedZ;
+
+    let bobY = 0, bobTilt = 0;
+    if(isMoving){
+      bobY = Math.abs(Math.sin(walkTime*7.2)) * 0.045;
+      bobTilt = Math.sin(walkTime*7.2) * 0.012;
+    } else {
+      bobY = Math.sin(now_ref()*0.0016) * 0.006;
+    }
+    camera.position.y = EYE_HEIGHT + bobY;
+    camera.rotation.set(pitch + (isMoving ? Math.sin(walkTime*3.6)*0.006 : 0), yaw, bobTilt, 'YXZ');
+  }
+  function now_ref(){ return performance.now(); }
+
+  /* ============ RAYCAST / INTERACTION PROMPT ============ */
+  const raycaster = new THREE.Raycaster();
+  let currentTarget = null;
+
+  function updateInteractionPrompt(){
+    if(turningId || draggingWindow || holdingId) return; // progress text is managed by the gesture handlers while active
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    raycaster.set(camera.position, dir);
+
+    let best = null, bestDist = Infinity;
+    for(const it of interactables){
+      if(it.enabledCheck && !it.enabledCheck()) continue;
+      if(it.mesh.visible === false) continue;
+      const worldPos = new THREE.Vector3();
+      it.mesh.getWorldPosition(worldPos);
+      const dist = camera.position.distanceTo(worldPos);
+      if(dist > it.range) continue;
+      const toObj = worldPos.clone().sub(camera.position).normalize();
+      const angle = dir.angleTo(toObj);
+      // Point-blank range: register regardless of look direction — if you're
+      // standing right on top of something you should be able to use it no
+      // matter which way you're facing. Loosens progressively with distance.
+      const angleLimit = dist < 0.5 ? Math.PI : (dist < 1.2 ? 1.6 : 0.7);
+      if(angle < angleLimit && dist < bestDist){
+        bestDist = dist; best = it;
+      }
+    }
+    currentTarget = best;
+    const promptEl = document.getElementById('interact-prompt');
+    const keyEl = document.getElementById('interact-key');
+    if(best){
+      const gesture = GESTURE_BY_ID[best.id];
+      keyEl.textContent = gesture === 'hold' ? '누르기' : (gesture ? '드래그' : '클릭');
+      document.getElementById('interact-text').textContent = best.promptText;
+      promptEl.classList.add('show');
+      setGestureHint(gesture || null);
+    } else {
+      promptEl.classList.remove('show');
+      setGestureHint(null);
+    }
+  }
+
+  function tryInteract(){
+    if(inputBlocked()) return;
+    if(currentTarget){
+      playClick();
+      currentTarget.onInteract();
+    }
+  }
+
+  /* ============ GAME STATE / MISSIONS ============ */
+  const gameState = {
+    started:false, ended:false, paused:false, infoOpen:false, quizOpen:false, cutscene:false,
+    mission:0, score:0, mistakes:0, startTime:0, elapsed:0,
+    hasDetector:false, leakFound:false, leakSealed:false, windowOpen:false,
+    mainValveOff:false, reported:false, evacuated:false, gasLevel:6, muted:false, gustScheduled:false,
+    extinguisherChecked:false
+  };
+
+  function setMissionUI(){
+    document.querySelectorAll('.m-item').forEach(el=>{
+      const idx = parseInt(el.dataset.m);
+      el.classList.remove('active','done');
+      if(idx < gameState.mission) el.classList.add('done');
+      else if(idx === gameState.mission) el.classList.add('active');
+    });
+    const total = 6;
+    const active = document.querySelector(`.m-item[data-m="${gameState.mission}"]`);
+    const completed = Math.min(gameState.mission, total);
+    document.getElementById('objective-step').textContent = completed >= total ? 'MISSION COMPLETE' : `MISSION ${String(completed + 1).padStart(2,'0')}`;
+    document.getElementById('objective-title').textContent = active ? active.lastElementChild.textContent : '모든 안전 대응 절차를 완료했습니다';
+    document.getElementById('objective-state').textContent = completed >= total ? '안전지대 유지' : `${completed} / ${total} 완료`;
+    document.getElementById('objective-progress').style.width = `${(completed / total) * 100}%`;
+  }
+
+  function showToast(msg, warn){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.toggle('warn', !!warn);
+    t.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>t.classList.remove('show'), 2600);
+    if(warn) playWarning();
+  }
+
+  function showInfoCard(title, body){
+    gameState.infoOpen = true;
+    document.getElementById('info-title').textContent = title;
+    document.getElementById('info-body').textContent = body;
+    document.getElementById('info-overlay').classList.remove('hidden');
+  }
+  document.getElementById('btn-info-ok').addEventListener('click', ()=>{
+    document.getElementById('info-overlay').classList.add('hidden');
+    gameState.infoOpen = false;
+    if(gameState.ended) return;
+    if(gameState.mission === 1){
+      setTimeout(()=>openQuiz(QUIZ_VALVE, null), 250);
+    } else if(gameState.mission === 3){
+      setTimeout(()=>openQuiz(QUIZ_LEAK, ()=>completeMission(3, '안전 수칙을 확인했습니다.')), 250);
+    }
+  });
+
+  function completeMission(idx, msg){
+    if(gameState.mission !== idx) return;
+    // Flat, fixed score per checklist step — no combo multiplier, no speed
+    // bonus stacking. A real inspection isn't scored on how fast you tap
+    // through it; it's scored on whether each item actually got done. The
+    // one time-based bonus that remains lives in endGame() as a single
+    // overall response-time rating, not a per-step arcade combo.
+    gameState.score += 150;
+    gameState.mission = idx+1;
+    setMissionUI();
+    showToast(msg);
+    playSuccess();
+    document.getElementById('score-val').textContent = gameState.score;
+
+    // A quiet flash so a completed step reads as "confirmed", without a
+    // camera-punch zoom or a floating "+200" popup — those read as
+    // hyper-casual mobile-game juice, which fights the grounded, realistic
+    // tone the rest of the sim is going for.
+    const flashEl = document.getElementById('mission-flash');
+    flashEl.classList.remove('pulse'); void flashEl.offsetWidth; flashEl.classList.add('pulse');
+  }
+
+  // Floating "+200" style score popup near the score HUD box — small bit of
+  // arcade-style game-feel so scoring moments land visually, not just as a
+  // number quietly changing in the corner.
+  function spawnScorePopup(amount, isCombo){
+    const box = document.getElementById('score-val');
+    if(!box) return;
+    const rect = box.getBoundingClientRect();
+    const el = document.createElement('div');
+    el.textContent = '+' + amount;
+    el.style.position = 'fixed';
+    el.style.left = (rect.left + rect.width/2) + 'px';
+    el.style.top = rect.top + 'px';
+    el.style.transform = 'translate(-50%, 0)';
+    el.style.color = isCombo ? '#ffd166' : '#35d18a';
+    el.style.fontWeight = '800';
+    el.style.fontSize = '16px';
+    el.style.textShadow = '0 2px 6px rgba(0,0,0,0.6)';
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = 20;
+    el.style.transition = 'transform 900ms ease-out, opacity 900ms ease-out';
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>{
+      el.style.transform = 'translate(-50%, -32px)';
+      el.style.opacity = '0';
+    });
+    setTimeout(()=>el.remove(), 950);
+  }
+
+  function scheduleGust(){
+    if(gameState.gustScheduled) return;
+    gameState.gustScheduled = true;
+    const delay = 7000 + Math.random()*11000;
+    setTimeout(()=>{
+      if(gameState.ended || gameState.mission>=2) return;
+      gameState.gasLevel = Math.min(100, gameState.gasLevel + 14);
+      showToast('돌풍이 들어와 실내 가스 농도가 갑자기 치솟았습니다! 서둘러 조치하세요.', true);
+    }, delay);
+  }
+
+  function checkMission2Complete(){
+    if(gameState.windowOpen && gameState.mission===2){
+      completeMission(2, '자연 환기를 시작했습니다.');
+      showInfoCard('누출 부위를 만지지 마세요', '비눗물 점검은 평상시 배관·호스 연결부의 누설 확인 방법입니다. 하지만 냄새가 나는 긴급 상황에서는 테이프나 임의 수리를 시도하지 말고, 자연 환기 후 즉시 안전지대로 대피하세요.');
+    }
+  }
+
+  /* ============ QUIZ ============ */
+  const QUIZ_VALVE = {
+    q: '가스 냄새가 날 때 밸브를 잠글 수 있는 경우는?',
+    options: [
+      {text:'안전하게 접근할 수 있을 때만 수동 밸브를 잠근다', correct:true, why:'맞습니다. 밸브가 누출 지점과 가깝거나 접근이 위험하면 차단을 시도하지 말고 바로 대피해야 합니다.'},
+      {text:'누출 위치를 찾을 때까지 실내를 돌아다닌다', correct:false, why:'가스 냄새가 나는 실내에서 원인을 찾으려 돌아다니는 행동은 위험할 수 있습니다.'},
+      {text:'테이프로 누출 부위를 먼저 막는다', correct:false, why:'일반인이 테이프로 가스 설비를 수리하면 안 됩니다. 임의 수리 대신 대피 후 신고하세요.'}
+    ]
+  };
+  const QUIZ_LEAK = {
+    q: '가스 냄새가 나는 실내에서 올바른 행동은?',
+    options: [
+      {text:'전등 스위치를 켜서 상황을 확인한다', correct:false, why:'전기 스위치를 조작하면 작은 스파크로도 불이 붙을 수 있어 절대 금지입니다.'},
+      {text:'전기기기를 조작하지 않고 문·창문을 열어 자연 환기한 뒤 대피한다', correct:true, why:'맞습니다. 환풍기·선풍기·전등 등 전기기기는 켜거나 끄지 말고, 자연 환기 후 안전지대로 나가야 합니다.'},
+      {text:'라이터로 냄새의 원인을 찾아본다', correct:false, why:'불씨를 가까이 대는 행동은 폭발로 이어질 수 있어 매우 위험합니다.'},
+      {text:'환풍기를 켜서 냄새를 빼낸다', correct:false, why:'환풍기 모터의 스파크도 점화원이 될 수 있어 전기 기기 작동은 피해야 합니다.'}
+    ]
+  };
+  const QUIZ_MAINVALVE = {
+    q: '메인 가스밸브를 잠근 뒤에도 계속 신경 써야 하는 것은?',
+    options: [
+      {text:'환기를 유지하고 전기기기는 만지지 않는다', correct:true, why:'밸브를 잠가도 실내에 남은 가스와 화재 위험은 남아있어, 환기를 계속하고 전기 스위치 등은 만지면 안 됩니다.'},
+      {text:'창문을 다시 닫아 냄새가 퍼지지 않게 한다', correct:false, why:'반대입니다 — 환기를 위해 창문은 계속 열어둬야 합니다.'},
+      {text:'가스가 잠겼으니 바로 다시 요리해도 된다', correct:false, why:'잔류 가스와 위험이 남아있을 수 있어, 안전이 완전히 확인되기 전까지는 재사용하면 안 됩니다.'}
+    ]
+  };
+  let _quizOnComplete = null;
+  function openQuiz(quizData, onComplete){
+    gameState.quizOpen = true;
+    _quizOnComplete = onComplete || null;
+    document.getElementById('quiz-overlay').classList.remove('hidden');
+    document.getElementById('quiz-question').textContent = quizData.q;
+    const optWrap = document.getElementById('quiz-options');
+    optWrap.innerHTML = '';
+    document.getElementById('quiz-feedback').textContent = '';
+    document.getElementById('btn-quiz-next').classList.add('hidden');
+    quizData.options.forEach((opt)=>{
+      const b = document.createElement('button');
+      b.className = 'quiz-opt';
+      b.textContent = opt.text;
+      b.addEventListener('click', ()=>answerQuiz(opt, b, quizData));
+      optWrap.appendChild(b);
+    });
+  }
+  function answerQuiz(opt, btnEl, quizData){
+    const allBtns = document.querySelectorAll('.quiz-opt');
+    allBtns.forEach(b=>b.setAttribute('disabled','true'));
+    if(opt.correct){
+      btnEl.classList.add('correct');
+      gameState.score += 100;
+      playTone(880,0.3,0.09,'triangle');
+      setTimeout(()=>playTone(1174.7,0.35,0.09,'triangle'),110);
+    } else {
+      btnEl.classList.add('wrong');
+      gameState.mistakes++;
+      playQuizWrong();
+      const correctBtn = Array.from(allBtns).find((b,i)=>quizData.options[i].correct);
+      if(correctBtn) correctBtn.classList.add('correct');
+    }
+    document.getElementById('quiz-feedback').textContent = opt.why;
+    document.getElementById('btn-quiz-next').classList.remove('hidden');
+    document.getElementById('score-val').textContent = gameState.score;
+  }
+  document.getElementById('btn-quiz-next').addEventListener('click', ()=>{
+    document.getElementById('quiz-overlay').classList.add('hidden');
+    gameState.quizOpen = false;
+    const cb = _quizOnComplete; _quizOnComplete = null;
+    if(cb) cb();
+  });
+
+  /* ============ PHONE CLOSE-UP REPORT SCENE ============ */
+  const PHONE_QUIZ = {
+    q: '상담원에게 가장 먼저 알려야 하는 정보는?',
+    options: [
+      {text:'정확한 주소와 현재 상황', correct:true, why:'위치와 상황을 정확히 전달해야 출동이 빨라집니다.'},
+      {text:'본인 이름과 생년월일', correct:false, why:'필요하긴 하지만, 가장 먼저 알려야 하는 건 정확한 위치와 상황입니다.'},
+      {text:'좋아하는 음식', correct:false, why:'신고와 무관한 정보입니다. 당황하지 말고 위치부터 말하세요.'}
+    ]
+  };
+  function openPhoneCall(){
+    gameState.infoOpen = true; // reuses the existing "block movement/interaction" pattern
+    document.getElementById('phone-overlay').classList.remove('hidden');
+    document.getElementById('phone-dialing').classList.remove('hidden');
+    document.getElementById('phone-quiz').classList.add('hidden');
+    document.getElementById('phone-done').classList.add('hidden');
+    setTimeout(()=>{
+      document.getElementById('phone-dialing').classList.add('hidden');
+      document.getElementById('phone-quiz').classList.remove('hidden');
+      renderPhoneQuiz();
+    }, 1300);
+  }
+  function renderPhoneQuiz(){
+    document.getElementById('phone-quiz-q').textContent = PHONE_QUIZ.q;
+    const wrap = document.getElementById('phone-quiz-opts');
+    wrap.innerHTML = '';
+    document.getElementById('phone-quiz-fb').textContent = '';
+    document.getElementById('btn-phone-next').classList.add('hidden');
+    PHONE_QUIZ.options.forEach((opt, idx)=>{
+      const b = document.createElement('button');
+      b.className = 'quiz-opt';
+      b.textContent = opt.text;
+      b.addEventListener('click', ()=>{
+        const allBtns = wrap.querySelectorAll('.quiz-opt');
+        allBtns.forEach(x=>x.setAttribute('disabled','true'));
+        if(opt.correct){
+          b.classList.add('correct');
+          gameState.score += 50;
+          playSuccess();
+        } else {
+          b.classList.add('wrong');
+          gameState.mistakes++;
+          playQuizWrong();
+          const correctBtn = Array.from(allBtns)[PHONE_QUIZ.options.findIndex(o=>o.correct)];
+          if(correctBtn) correctBtn.classList.add('correct');
+        }
+        document.getElementById('phone-quiz-fb').textContent = opt.why;
+        document.getElementById('btn-phone-next').classList.remove('hidden');
+        document.getElementById('score-val').textContent = gameState.score;
+      });
+      wrap.appendChild(b);
+    });
+  }
+  document.getElementById('btn-phone-next').addEventListener('click', ()=>{
+    document.getElementById('phone-quiz').classList.add('hidden');
+    document.getElementById('phone-done').classList.remove('hidden');
+    setTimeout(finishPhoneCall, 1200);
+  });
+  function finishPhoneCall(){
+    document.getElementById('phone-overlay').classList.add('hidden');
+    gameState.infoOpen = false;
+    gameState.reported = true;
+    callBtn.material.emissive.setHex(0x220000);
+    callBtn.material.color.setHex(0x27ae60);
+    completeMission(5, '119 신고가 접수되었습니다. 안전한 곳에서 안내를 기다리세요.');
+    showToast('신고 완료! 실내로 다시 들어가지 마세요.');
+    setTimeout(()=>endGame(true), 550);
+  }
+
+  function endGame(success, failReason){
+    gameState.ended = true;
+    setAlarmLoop(false);
+    const overlay = document.getElementById('end-overlay');
+    overlay.classList.remove('hidden');
+    const mm = Math.floor(gameState.elapsed/60).toString().padStart(2,'0');
+    const ss = Math.floor(gameState.elapsed%60).toString().padStart(2,'0');
+    document.getElementById('r-time').textContent = `${mm}:${ss}`;
+
+    let multiplier = 1.0, speedTag = '';
+    if(success){
+      if(gameState.elapsed < 100){ multiplier = 1.4; speedTag = '신속 대응 보너스 x1.4'; }
+      else if(gameState.elapsed < 160){ multiplier = 1.2; speedTag = '빠른 대응 보너스 x1.2'; }
+      else { multiplier = 1.0; speedTag = '보너스 없음 (더 빠르게 도전해보세요)'; }
+    }
+    const finalScore = Math.round(gameState.score * multiplier);
+    document.getElementById('r-score').textContent = finalScore;
+    document.getElementById('r-mistake').textContent = gameState.mistakes;
+    document.getElementById('r-multiplier').textContent = success ? speedTag : '';
+
+    let rank = 'C 등급 - 재도전 권장';
+    if(finalScore >= 1300 && gameState.mistakes===0) rank = 'S 등급 - 완벽한 안전점검!';
+    else if(finalScore >= 1050) rank = 'A 등급 - 훌륭한 대응!';
+    else if(finalScore >= 750) rank = 'B 등급 - 양호한 대응';
+    document.getElementById('end-rank').textContent = rank;
+    document.getElementById('end-title').textContent = success ? '미션 완료 - 안전하게 대피했습니다' : '시뮬레이션 종료';
+    document.getElementById('end-desc').textContent = success
+      ? '실제 가정에서 가스 냄새가 나면 전등·환풍기 등 전기기기를 조작하지 말고, 안전하게 접근 가능할 때만 밸브를 잠근 뒤 문·창문을 열어 자연 환기하세요. 이어서 즉시 대피하고 외부에서 119에 신고하세요.'
+      : (failReason || '가스농도가 위험 수준에 도달해 사고로 이어졌습니다. 누출을 더 빨리 발견하고 조치할수록 안전합니다. 다시 도전해보세요.');
+
+    const comments = success ? [
+      '기본 수칙은 다 지켰네요. 다음엔 누출 지점을 더 빨리 찾아 시간을 단축해보세요.',
+      '침착하게 순서대로 잘 처리했습니다. 실제 상황에서도 이 순서를 기억하세요.',
+      '훌륭합니다. 이 정도면 이웃에게도 알려줄 만한 실력이에요.'
+    ] : [
+      '아쉽지만 이번엔 시간이 부족했네요. 실내 전기 조작을 피하고 자연 환기 후 바로 대피하세요.',
+      '가스농도 관리에 실패했습니다. 다음엔 안전한 밸브 차단과 자연 환기를 더 빨리 판단해보세요.'
+    ];
+    document.getElementById('inspector-comment').textContent = comments[Math.floor(Math.random()*comments.length)];
+  }
+
+  /* ============ INTRO CUTSCENE (auto-plays: waking up in bed) ============ */
+  function showCaption(text){
+    const el = document.getElementById('caption-box');
+    el.textContent = text;
+    el.classList.remove('hidden');
+    requestAnimationFrame(()=> el.classList.add('show'));
+  }
+  function hideCaption(){
+    document.getElementById('caption-box').classList.remove('show');
+  }
+
+  function easeInOutQuad(p){ return p<0.5 ? 2*p*p : -1+(4-2*p)*p; }
+
+  // amount: 0 = eyes fully open (clear, sharp), 1 = eyes fully closed (black, blurred).
+  // Combines a plain opacity fade with a focus blur on the 3D view underneath —
+  // a much simpler and more reliable "waking up" feel than trying to draw
+  // actual eyelid shapes, which read as uncanny rather than anatomical.
+  const eyelidOverlay = document.getElementById('eyelid-overlay');
+  function setEyelidClosed(amount){
+    const v = Math.max(0, Math.min(1, amount));
+    eyelidOverlay.style.opacity = v;
+    wrap.style.filter = `blur(${(v*9).toFixed(1)}px) brightness(${(1 - v*0.35).toFixed(2)})`;
+  }
+
+  function playIntroCutscene(){
+    gameState.cutscene = true;
+    const skipEl = document.getElementById('cutscene-skip');
+    skipEl.classList.add('show');
+    setEyelidClosed(1);
+
+    const startPos = new THREE.Vector3(-3.6, 0.62, -0.4);
+    // Was -1.5 (nearly straight up at a blank patch of ceiling with nothing
+    // else in frame). Easing this back to -1.0 keeps the groggy "just woke up"
+    // upward tilt but brings the room's walls, furniture, and ceiling detail
+    // into view together instead of filling the screen with one flat surface.
+    const startPitch = -1.0, startYaw = 2.7;
+    const endPos = new THREE.Vector3(-1.0, 1.65, 0.6);
+    const endPitch = 0, endYaw = 0;
+
+    camera.position.copy(startPos);
+    pitch = startPitch; yaw = startYaw;
+    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+
+    let skipped = false;
+    let rafId = null;
+    const timers = [];
+    function onSkip(){
+      if(skipped) return;
+      skipped = true;
+      timers.forEach(clearTimeout);
+      if(rafId) cancelAnimationFrame(rafId);
+      hideCaption();
+      setEyelidClosed(0);
+      finishCutscene();
+    }
+    skipEl.addEventListener('click', onSkip, {once:true});
+
+    // A natural waking blink: two quick half-blinks (never fully reopening),
+    // then a slower, more deliberate final blink before the eyes settle open.
+    // Values are "closedness" (0=open, 1=closed) — smoother and more legible
+    // than the old plain fade, since each step now has room to ease in/out.
+    const blinkSchedule = [
+      [250, 0.8], [480, 1],
+      [820, 0.45], [1080, 1],
+      [1450, 0.15]
+    ];
+    blinkSchedule.forEach(([t,amount])=>{
+      timers.push(setTimeout(()=>{ if(!skipped) setEyelidClosed(amount); }, t));
+    });
+
+    showCaption('...음... 몇 시지...');
+    timers.push(setTimeout(()=>{ if(!skipped) showCaption('어? 이 냄새 뭐지...?'); }, 1500));
+    timers.push(setTimeout(()=>{
+      if(skipped) return;
+      hideCaption();
+      setEyelidClosed(0);
+      const t0 = performance.now();
+      const DUR = 2400;
+      function tick(){
+        if(skipped) return;
+        const p = Math.min(1, (performance.now()-t0)/DUR);
+        const e = easeInOutQuad(p);
+        camera.position.lerpVectors(startPos, endPos, e);
+        pitch = startPitch + (endPitch-startPitch)*e;
+        yaw = startYaw + (endYaw-startYaw)*e;
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+        renderer.render(scene, camera);
+        if(p < 1){ rafId = requestAnimationFrame(tick); }
+        else { finishCutscene(); }
+      }
+      tick();
+    }, 2900));
+
+    function finishCutscene(){
+      gameState.cutscene = false;
+      skipEl.classList.remove('show');
+      skipEl.removeEventListener('click', onSkip);
+      wrap.style.filter = ''; // clear the inline blur/brightness override so the base color-grade CSS filter takes over again
+      gameState.started = true;
+      gameState.startTime = performance.now();
+      setMissionUI();
+      showToast('노란 다이아몬드 표식이 있는 곳으로 걸어가 가까이 다가가세요.');
+    }
+  }
+
+  /* ============ PAUSE ============ */
+  function pauseGame(){
+    if(!gameState.started || gameState.ended || gameState.infoOpen || gameState.quizOpen || gameState.cutscene) return;
+    gameState.paused = true;
+    turningId = null; turnLastAngle = null;
+    draggingWindow = false; windowDragProgress = 0;
+    if(holdingId === 'leakPoint') cancelLeakSpray();
+    else if(holdingId === 'extinguisher') cancelExtinguisherCheck();
+    document.getElementById('pause-overlay').classList.remove('hidden');
+  }
+  function resumeGame(){
+    gameState.paused = false;
+    document.getElementById('pause-overlay').classList.add('hidden');
+  }
+  document.getElementById('btn-resume').addEventListener('click', resumeGame);
+
+  /* ============ START / RESTART ============ */
+  document.getElementById('btn-start').addEventListener('click', ()=>{
+    initAudio();
+    randomizeLeak();
+    document.getElementById('start-overlay').classList.add('hidden');
+    document.getElementById('loading').classList.remove('hidden');
+    setTimeout(()=>{
+      document.getElementById('loading').classList.add('hidden');
+      playIntroCutscene();
+    }, 700);
+  });
+  document.getElementById('mute-btn').addEventListener('click', ()=>{
+    if(!audioCtx) initAudio();
+    setMuted(!gameState.muted);
+  });
+
+  document.getElementById('btn-restart').addEventListener('click', ()=>{
+    location.reload();
+  });
+
+  /* ============ MAIN LOOP ============ */
+  let lastT = performance.now();
+  function animate(){
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05,(now-lastT)/1000);
+    lastT = now;
+
+    const gameActive = gameState.started && !gameState.ended && !gameState.paused && !gameState.infoOpen && !gameState.quizOpen;
+
+    if(gameActive){
+      updateMovement(dt);
+      updateInteractionPrompt();
+      updateBeacons(now);
+      if(holdingId === 'leakPoint') updateLeakSprayVisual(dt);
+      else if(holdingId === 'extinguisher') updateExtinguisherVisual(dt);
+      gameState.elapsed = (now - gameState.startTime)/1000;
+      const mm = Math.floor(gameState.elapsed/60).toString().padStart(2,'0');
+      const ss = Math.floor(gameState.elapsed%60).toString().padStart(2,'0');
+      document.getElementById('time-val').textContent = `${mm}:${ss}`;
+
+      if(gameState.mission===1 && gameState.hasDetector){
+        const distAll = camera.position.distanceTo(leakPos);
+        const dist = distAll;
+        const detScreenMat = detScreen.material;
+        if(dist < 6.0){
+          const intensity = Math.max(0, 1 - dist/6.0);
+          gasParticles.forEach(p=> p.mesh.material.opacity = 0.1 + intensity*0.42 );
+          jetLight.intensity = 0.15 + intensity*0.9;
+          detScreenMat.emissive.setHex(intensity>0.6 ? 0xff2222 : 0x224422);
+
+          // Real combustible-gas detectors don't show you a glow — they
+          // beep, faster and higher-pitched the closer you get. That "hot
+          // and cold" audio cue is both more realistic and does more of the
+          // actual searching work than the visual glow alone, so the visual
+          // stays subtle and this carries most of the feedback.
+          detectorBeepTimer -= dt;
+          if(detectorBeepTimer <= 0 && !gameState.leakFound){
+            const freq = 720 + intensity*1100;
+            playTone(freq, 0.09, 0.05 + intensity*0.06, 'square');
+            detectorBeepTimer = Math.max(0.1, 0.68 - intensity*0.55);
+          }
+
+          if(dist < 0.55 && !gameState.leakFound){
+            gameState.leakFound = true;
+            completeMission(1, '누출 지점을 발견했습니다! 신속히 조치하세요.');
+            scheduleGust();
+          }
+        } else {
+          gasParticles.forEach(p=> p.mesh.material.opacity *= 0.9);
+          jetLight.intensity *= 0.9;
+          detectorBeepTimer = 0;
+        }
+      }
+      gasParticles.forEach((p)=>{
+        // 낮은 곳에 고이는 성질을 표현: y는 바닥 근처에서만 잔잔하게
+        // 변화하고, x/z 방향으로 천천히 퍼진다.
+        p.mesh.position.y = 0.08 + Math.sin(now*0.0016 + p.offset)*0.014;
+        p.mesh.position.x += Math.sin(now*0.001 + p.offset*1.7)*0.0012;
+        p.mesh.position.z += Math.cos(now*0.0011 + p.offset*1.3)*0.0012;
+        const pulse = 1 + Math.sin(now*0.002+p.offset)*0.15;
+        p.mesh.scale.set(p.baseScale*pulse, p.baseScale*pulse, 1);
+        if(p.mesh.position.distanceToSquared(new THREE.Vector3(leakPos.x,0.08,leakPos.z)) > 1.7){
+          p.mesh.position.copy(leakPos).add(new THREE.Vector3((Math.random()-0.5)*0.18,-0.84,(Math.random()-0.5)*0.18));
+        }
+      });
+
+      kettleSteam.forEach(s=>{
+        const cycle = ((now*0.0004 + s.offset) % 3)/3;
+        s.mesh.position.y = kettleGroup.position.y + 0.11 + cycle*0.35;
+        s.mesh.position.x = kettleGroup.position.x + 0.08 + Math.sin(now*0.002+s.offset)*0.02*cycle;
+        s.mesh.material.opacity = Math.sin(cycle*Math.PI) * 0.22;
+        s.mesh.scale.setScalar(0.09 + cycle*0.1);
+      });
+
+      if(flame.visible){
+        flame.scale.y = 0.88 + Math.sin(now*0.021)*0.14 + Math.sin(now*0.053)*0.05;
+        flame.scale.x = flame.scale.z = 0.92 + Math.sin(now*0.037)*0.08;
+        flame.rotation.y = Math.sin(now*0.0091)*0.3;
+        flame.position.x = 0 + Math.sin(now*0.045)*0.006;
+        flameLight.intensity = 0.75 + Math.sin(now*0.03)*0.25 + Math.sin(now*0.11)*0.08;
+      }
+
+      const ventilating = gameState.windowOpen;
+      let rate;
+      if(gameState.mainValveOff && ventilating) rate = -7;
+      else if(gameState.mainValveOff) rate = -2.2;
+      else if(ventilating) rate = -1.4;
+      else rate = 0.6;
+      gameState.gasLevel = Math.max(0, Math.min(100, gameState.gasLevel + rate*dt));
+      const gasBox = document.getElementById('gas-box');
+      document.getElementById('gas-val').textContent = Math.floor(gameState.gasLevel)+'%';
+      gasBox.classList.remove('warn','danger');
+      if(gameState.gasLevel > 70){
+        gasBox.classList.add('danger');
+        document.getElementById('vignette').style.boxShadow = 'inset 0 0 220px 60px rgba(231,76,60,0.55)';
+        alarmLight.intensity = 1.6 + Math.sin(now*0.01)*0.8;
+        setAlarmLoop(true);
+      } else if(gameState.gasLevel > 35){
+        gasBox.classList.add('warn');
+        document.getElementById('vignette').style.boxShadow = 'inset 0 0 160px 40px rgba(231,76,60,0.25)';
+        alarmLight.intensity = 0.4;
+        setAlarmLoop(false);
+      } else {
+        document.getElementById('vignette').style.boxShadow = 'inset 0 0 0 0 rgba(231,76,60,0)';
+        alarmLight.intensity = 0;
+        setAlarmLoop(false);
+      }
+      if(gameState.gasLevel >= 100 && !gameState.ended){
+        gameState.mistakes++;
+        showToast('누출을 너무 오래 방치해 위험 수준에 도달했습니다!', true);
+        endGame(false);
+      }
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+})();
+</script>
+</body>
+</html>
