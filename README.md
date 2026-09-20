@@ -8,9 +8,8 @@
 
 ## 🎮 Play
 
-**[▶️ Play the game](https://YOUR-USERNAME.github.io/gas-safety-3d/)**
+**[▶️ Play the game](https://gas-safe.netlify.app/)**
 
-> GitHub Pages 배포 후 위 주소를 실제 저장소 주소로 변경하세요.
 
 ## ✨ Features
 
@@ -80,10 +79,6 @@ cd gas-safety-3d
 그 다음 `index.html`을 브라우저에서 실행합니다.
 
 > 프로젝트는 키보드와 마우스 조작을 사용하는 데스크톱 환경을 기준으로 제작되었습니다.
-
-## 🎮 Play the Game
-
-[▶️ Play Gas Safety Inspection 3D](gas-safe.netlify.app)
 
 ## 📸 Screenshots
 
