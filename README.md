@@ -81,6 +81,10 @@ cd gas-safety-3d
 
 > 프로젝트는 키보드와 마우스 조작을 사용하는 데스크톱 환경을 기준으로 제작되었습니다.
 
+## 🎮 Play the Game
+
+[▶️ Play Gas Safety Inspection 3D](gas-safe.netlify.app)
+
 ## 📸 Screenshots
 
 ### Gameplay
