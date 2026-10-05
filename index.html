@@ -397,7 +397,7 @@
   <div class="card" style="text-align:center;">
     <div class="eyebrow">일시정지</div>
     <h1 style="font-size:24px;">잠시 멈췄습니다</h1>
-    <p>계속하려면 아래 버튼을 눌러 화면을 다시 클릭하세요.</p>
+    <p><b>계속하기</b> 버튼 또는 <b>ESC</b> 키를 누르면 이어서 진행합니다.</p>
     <button class="btn" id="btn-resume">계속하기</button>
   </div>
 </div>
@@ -491,10 +491,12 @@
   const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 100);
   camera.position.set(-1.0, 1.65, 0.6);
 
-  const renderer = new THREE.WebGLRenderer({antialias:true});
+  const renderer = new THREE.WebGLRenderer({antialias: window.devicePixelRatio < 2, powerPreference:'high-performance'});
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.autoUpdate = false; // 그림자를 드리우는 건 정적인 벽·카운터뿐 → 첫 렌더에서 1회만 계산
+  renderer.shadowMap.needsUpdate = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap; // soft-edged shadows instead of hard-edged PCF — reads far less "game-jam"
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -661,11 +663,22 @@
     return new THREE.MeshStandardMaterial(Object.assign({map, bumpMap:bump, bumpScale:0.01, roughness:0.6}, extra||{}));
   }
 
+  const MAX_DPR = Math.min(window.devicePixelRatio, 2);
+  let curDPR = MAX_DPR, needsRepaint = true;
   window.addEventListener('resize', ()=>{
     camera.aspect = window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    needsRepaint = true;
   });
+  function setDPR(r){
+    curDPR = r;
+    renderer.setPixelRatio(r);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    needsRepaint = true;
+  }
+  // DOM 텍스트는 값이 바뀔 때만 갱신 (매 프레임 쓰면 레이아웃 재계산 발생)
+  function setText(el, t){ if(el.textContent !== t) el.textContent = t; }
 
   /* ============ AUDIO ============ */
   let audioCtx = null, masterGain = null, sfxGain = null;
@@ -2756,8 +2769,12 @@
 
   document.addEventListener('keydown', e=>{
     keys[e.code]=true;
-    if(e.code==='Escape') pauseGame();
+    if(e.code==='Escape'){ if(gameState.paused) resumeGame(); else pauseGame(); }
   });
+  // 창 전환(Alt+Tab 등) 중 키가 눌린 채로 남아 계속 걷거나, 게임이 계속 진행되는 문제 방지
+  function releaseAllInput(){ for(const k in keys) keys[k]=false; dragging=false; }
+  window.addEventListener('blur', ()=>{ releaseAllInput(); pauseGame(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ releaseAllInput(); pauseGame(); } });
   document.addEventListener('keyup', e=>{ keys[e.code]=false; });
 
   const domEl = renderer.domElement;
@@ -2969,10 +2986,14 @@
   /* ============ RAYCAST / INTERACTION PROMPT ============ */
   const raycaster = new THREE.Raycaster();
   let currentTarget = null;
+  const _ipDir = new THREE.Vector3(), _ipPos = new THREE.Vector3(), _ipTo = new THREE.Vector3();
+  const _promptEl = document.getElementById('interact-prompt');
+  const _keyEl = document.getElementById('interact-key');
+  const _textEl = document.getElementById('interact-text');
 
   function updateInteractionPrompt(){
     if(turningId || draggingWindow || holdingId) return; // progress text is managed by the gesture handlers while active
-    const dir = new THREE.Vector3();
+    const dir = _ipDir;
     camera.getWorldDirection(dir);
     raycaster.set(camera.position, dir);
 
@@ -2980,11 +3001,11 @@
     for(const it of interactables){
       if(it.enabledCheck && !it.enabledCheck()) continue;
       if(it.mesh.visible === false) continue;
-      const worldPos = new THREE.Vector3();
+      const worldPos = _ipPos;
       it.mesh.getWorldPosition(worldPos);
       const dist = camera.position.distanceTo(worldPos);
       if(dist > it.range) continue;
-      const toObj = worldPos.clone().sub(camera.position).normalize();
+      const toObj = _ipTo.copy(worldPos).sub(camera.position).normalize();
       const angle = dir.angleTo(toObj);
       // Point-blank range: register regardless of look direction — if you're
       // standing right on top of something you should be able to use it no
@@ -2995,12 +3016,12 @@
       }
     }
     currentTarget = best;
-    const promptEl = document.getElementById('interact-prompt');
-    const keyEl = document.getElementById('interact-key');
+    const promptEl = _promptEl;
+    const keyEl = _keyEl;
     if(best){
       const gesture = GESTURE_BY_ID[best.id];
-      keyEl.textContent = gesture === 'hold' ? '누르기' : (gesture ? '드래그' : '클릭');
-      document.getElementById('interact-text').textContent = best.promptText;
+      setText(keyEl, gesture === 'hold' ? '누르기' : (gesture ? '드래그' : '클릭'));
+      setText(_textEl, best.promptText);
       promptEl.classList.add('show');
       setGestureHint(gesture || null);
     } else {
@@ -3294,6 +3315,13 @@
     document.getElementById('r-score').textContent = finalScore;
     document.getElementById('r-mistake').textContent = gameState.mistakes;
     document.getElementById('r-multiplier').textContent = success ? speedTag : '';
+    if(success){
+      try{
+        const prev = parseInt(localStorage.getItem('gasSafetyBest'),10) || 0;
+        if(finalScore > prev) localStorage.setItem('gasSafetyBest', String(finalScore));
+        document.getElementById('r-multiplier').textContent += ` · 최고 점수 ${Math.max(prev, finalScore)}${finalScore>prev && prev>0 ? ' (신기록!)' : ''}`;
+      }catch(e){}
+    }
 
     let rank = 'C 등급 - 재도전 권장';
     if(finalScore >= 1300 && gameState.mistakes===0) rank = 'S 등급 - 완벽한 안전점검!';
@@ -3425,6 +3453,8 @@
   function pauseGame(){
     if(!gameState.started || gameState.ended || gameState.infoOpen || gameState.quizOpen || gameState.cutscene) return;
     gameState.paused = true;
+    releaseAllInput();
+    setAlarmLoop(false);
     turningId = null; turnLastAngle = null;
     draggingWindow = false; windowDragProgress = 0;
     if(holdingId === 'leakPoint') cancelLeakSpray();
@@ -3459,11 +3489,28 @@
 
   /* ============ MAIN LOOP ============ */
   let lastT = performance.now();
+  const _v1 = new THREE.Vector3();
+  const _timeEl = document.getElementById('time-val'), _gasValEl = document.getElementById('gas-val');
+  const _gasBoxEl = document.getElementById('gas-box'), _vignetteEl = document.getElementById('vignette');
+  let _lastGasLv = -1;
+  let fpsAcc = 0, fpsN = 0, fpsCool = 0;
   function animate(){
     requestAnimationFrame(animate);
     const now = performance.now();
-    const dt = Math.min(0.05,(now-lastT)/1000);
+    const rawDt = (now-lastT)/1000;
+    const dt = Math.min(0.05,rawDt);
     lastT = now;
+
+    // 동적 해상도: 평균 프레임이 ~22ms(약 45fps 미만)로 느린 구간이 이어질 때만 DPR을 낮추고, 여유가 생기면 원래대로 복구
+    if(gameState.started && !gameState.paused && !gameState.cutscene && rawDt < 0.5){
+      fpsAcc += rawDt; fpsN++;
+      if(fpsN >= 60){
+        const avg = fpsAcc/fpsN; fpsAcc = 0; fpsN = 0;
+        if(fpsCool > 0) fpsCool--;
+        else if(avg > 0.022 && curDPR > 1){ setDPR(Math.max(1, curDPR - 0.25)); fpsCool = 2; }
+        else if(avg < 0.014 && curDPR < MAX_DPR){ setDPR(Math.min(MAX_DPR, curDPR + 0.25)); fpsCool = 3; }
+      }
+    }
 
     const gameActive = gameState.started && !gameState.ended && !gameState.paused && !gameState.infoOpen && !gameState.quizOpen;
 
@@ -3473,10 +3520,10 @@
       updateBeacons(now);
       if(holdingId === 'leakPoint') updateLeakSprayVisual(dt);
       else if(holdingId === 'extinguisher') updateExtinguisherVisual(dt);
-      gameState.elapsed = (now - gameState.startTime)/1000;
+      gameState.elapsed += dt; // 실제 조작 시간만 누적 — 안내 카드·퀴즈·일시정지 시간은 제외
       const mm = Math.floor(gameState.elapsed/60).toString().padStart(2,'0');
       const ss = Math.floor(gameState.elapsed%60).toString().padStart(2,'0');
-      document.getElementById('time-val').textContent = `${mm}:${ss}`;
+      setText(_timeEl, `${mm}:${ss}`);
 
       if(gameState.mission===1 && gameState.hasDetector){
         const distAll = camera.position.distanceTo(leakPos);
@@ -3511,6 +3558,7 @@
           detectorBeepTimer = 0;
         }
       }
+      _v1.set(leakPos.x,0.08,leakPos.z);
       gasParticles.forEach((p)=>{
         // 낮은 곳에 고이는 성질을 표현: y는 바닥 근처에서만 잔잔하게
         // 변화하고, x/z 방향으로 천천히 퍼진다.
@@ -3519,7 +3567,7 @@
         p.mesh.position.z += Math.cos(now*0.0011 + p.offset*1.3)*0.0012;
         const pulse = 1 + Math.sin(now*0.002+p.offset)*0.15;
         p.mesh.scale.set(p.baseScale*pulse, p.baseScale*pulse, 1);
-        if(p.mesh.position.distanceToSquared(new THREE.Vector3(leakPos.x,0.08,leakPos.z)) > 1.7){
+        if(p.mesh.position.distanceToSquared(_v1) > 1.7){
           p.mesh.position.copy(leakPos).add(new THREE.Vector3((Math.random()-0.5)*0.18,-0.84,(Math.random()-0.5)*0.18));
         }
       });
@@ -3547,21 +3595,24 @@
       else if(ventilating) rate = -1.4;
       else rate = 0.6;
       gameState.gasLevel = Math.max(0, Math.min(100, gameState.gasLevel + rate*dt));
-      const gasBox = document.getElementById('gas-box');
-      document.getElementById('gas-val').textContent = Math.floor(gameState.gasLevel)+'%';
-      gasBox.classList.remove('warn','danger');
+      setText(_gasValEl, Math.floor(gameState.gasLevel)+'%');
+      const gasLv = gameState.gasLevel > 70 ? 2 : (gameState.gasLevel > 35 ? 1 : 0);
+      if(gasLv !== _lastGasLv){
+        _lastGasLv = gasLv;
+        _gasBoxEl.classList.remove('warn','danger');
+        if(gasLv===2) _gasBoxEl.classList.add('danger');
+        else if(gasLv===1) _gasBoxEl.classList.add('warn');
+        _vignetteEl.style.boxShadow = gasLv===2 ? 'inset 0 0 220px 60px rgba(231,76,60,0.55)'
+          : gasLv===1 ? 'inset 0 0 160px 40px rgba(231,76,60,0.25)'
+          : 'inset 0 0 0 0 rgba(231,76,60,0)';
+      }
       if(gameState.gasLevel > 70){
-        gasBox.classList.add('danger');
-        document.getElementById('vignette').style.boxShadow = 'inset 0 0 220px 60px rgba(231,76,60,0.55)';
         alarmLight.intensity = 1.6 + Math.sin(now*0.01)*0.8;
         setAlarmLoop(true);
       } else if(gameState.gasLevel > 35){
-        gasBox.classList.add('warn');
-        document.getElementById('vignette').style.boxShadow = 'inset 0 0 160px 40px rgba(231,76,60,0.25)';
         alarmLight.intensity = 0.4;
         setAlarmLoop(false);
       } else {
-        document.getElementById('vignette').style.boxShadow = 'inset 0 0 0 0 rgba(231,76,60,0)';
         alarmLight.intensity = 0;
         setAlarmLoop(false);
       }
@@ -3572,7 +3623,15 @@
       }
     }
 
-    renderer.render(scene, camera);
+    const frozen = gameState.paused || gameState.infoOpen || gameState.quizOpen || gameState.ended || !gameState.started;
+    if(gameState.cutscene){
+      // 컷신 tick()이 직접 렌더하므로 여기서는 생략 (기존엔 프레임당 2회 렌더)
+    } else if(frozen && !needsRepaint){
+      // 화면이 오버레이로 덮여 있고 장면이 멈춰 있으므로 재렌더 생략
+    } else {
+      renderer.render(scene, camera);
+      needsRepaint = false; // 멈춘 상태에서는 이 1회 이후 재렌더 생략 (리사이즈 시에만 다시 그림)
+    }
   }
   animate();
 
